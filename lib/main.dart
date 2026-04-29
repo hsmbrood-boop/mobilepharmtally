@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -8,6 +9,8 @@ import 'cash_settlement_screen.dart';
 import 'holiday_calendar_picker.dart';
 import 'pharm_tally_excel.dart';
 import 'settlement_store.dart';
+import 'statistics_screen.dart';
+import 'widgets/calc_search_icon.dart';
 
 void main() {
   runApp(const PharmTallyApp());
@@ -177,7 +180,22 @@ class _SalesScreenState extends State<SalesScreen> {
   int _toInt(String s) =>
       int.tryParse(s.replaceAll(',', '').trim()) ?? 0;
 
+  void _openStatistics() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const StatisticsScreen()),
+    );
+  }
+
   Future<void> _save() async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              '웹에서는 로컬 폴더에 저장할 수 없습니다. Windows 데스크톱(또는 안드로이드)에서 실행해 주세요.'),
+        ),
+      );
+      return;
+    }
     final store = SettlementStore.instance;
 
     String? folder = store.savedFolderPath.trim();
@@ -233,31 +251,30 @@ class _SalesScreenState extends State<SalesScreen> {
         child: Column(
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
+                  tooltip: '저장',
+                  icon: const Icon(Icons.save, color: Colors.teal),
+                  onPressed: _save,
+                ),
+                IconButton(
+                  tooltip: '통계',
+                  icon: const Icon(Icons.bar_chart, color: Colors.indigo),
+                  onPressed: _openStatistics,
+                ),
+                const Spacer(),
+                const Text('[매출/정산 상세]',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo)),
+                const Spacer(),
+                IconButton(
                   tooltip: '현금정산',
-                  icon: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.orange[700],
-                      shape: BoxShape.circle,
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x33000000),
-                          blurRadius: 6,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/icons/won_coin.png',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
+                  icon: const CalcSearchIcon(width: 52, height: 38),
+                  iconSize: 52,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  constraints: const BoxConstraints(),
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -266,6 +283,12 @@ class _SalesScreenState extends State<SalesScreen> {
                     );
                   },
                 ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
                 TextButton(
                   onPressed: () => setState(() => selectedDate = DateTime.now()),
                   child: const Text('오늘'),
@@ -290,16 +313,8 @@ class _SalesScreenState extends State<SalesScreen> {
                   icon: const Icon(Icons.calendar_month),
                   onPressed: pickDate,
                 ),
-                IconButton(
-                  tooltip: '저장',
-                  icon: const Icon(Icons.save, color: Colors.teal),
-                  onPressed: _save,
-                ),
               ],
             ),
-
-            const Text('[매출/정산 상세]',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
             const SizedBox(height: 12),
 
             buildInput('처방전수', rxController),

@@ -77,6 +77,7 @@ class _HolidayCalendarDialogState extends State<_HolidayCalendarDialog> {
             });
           },
           onPageChanged: (focusedDay) => _focusedDay = focusedDay,
+          weekendDays: const [DateTime.saturday],
           calendarStyle: CalendarStyle(
             todayDecoration: BoxDecoration(
               color: Colors.teal.withValues(alpha: 0.25),
@@ -87,10 +88,31 @@ class _HolidayCalendarDialogState extends State<_HolidayCalendarDialog> {
               shape: BoxShape.circle,
             ),
             holidayTextStyle: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-            weekendTextStyle: const TextStyle(color: Colors.red),
+            weekendTextStyle: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w600),
             outsideDaysVisible: false,
           ),
-          holidayPredicate: (day) => KoreanHolidays.isSolarHoliday(day),
+          holidayPredicate: (day) =>
+              day.weekday == DateTime.sunday || KoreanHolidays.isHoliday(day),
+          calendarBuilders: CalendarBuilders(
+            dowBuilder: (context, day) {
+              const labels = ['월', '화', '수', '목', '금', '토', '일'];
+              final label = labels[day.weekday - 1];
+              Color color;
+              if (day.weekday == DateTime.sunday) {
+                color = Colors.red;
+              } else if (day.weekday == DateTime.saturday) {
+                color = Colors.blue;
+              } else {
+                color = Colors.black87;
+              }
+              return Center(
+                child: Text(
+                  label,
+                  style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                ),
+              );
+            },
+          ),
           headerStyle: const HeaderStyle(
             titleCentered: true,
             formatButtonVisible: false,
