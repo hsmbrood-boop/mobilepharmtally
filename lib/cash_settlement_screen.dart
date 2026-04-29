@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:excel/excel.dart' hide Border;
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
+
+import 'settlement_store.dart';
 
 class CashSettlementScreen extends StatefulWidget {
   const CashSettlementScreen({super.key, required this.date});
@@ -15,40 +13,36 @@ class CashSettlementScreen extends StatefulWidget {
 }
 
 class _CashSettlementScreenState extends State<CashSettlementScreen> {
-  // 상단
-  final authorController = TextEditingController(text: '최병찬');
+  final SettlementStore _store = SettlementStore.instance;
+
+  late final TextEditingController authorController;
   bool authorFixed = true;
 
-  final baseCashController = TextEditingController(text: '1000000');
+  late final TextEditingController baseCashController;
   bool baseCashFixed = false;
 
-  final shortageController = TextEditingController(text: '0');
-  bool shortageFixed = false;
-
-  // 권종(장)
-  final c1000 = TextEditingController(text: '0');
+  late final TextEditingController c1000;
   bool c1000Fixed = false;
-  final c5000 = TextEditingController(text: '0');
+  late final TextEditingController c5000;
   bool c5000Fixed = false;
-  final c10000 = TextEditingController(text: '0');
+  late final TextEditingController c10000;
   bool c10000Fixed = false;
-  final c50000 = TextEditingController(text: '0');
+  late final TextEditingController c50000;
   bool c50000Fixed = false;
 
-  // 밀어돈(묶음, 개)
-  final b5000 = TextEditingController(text: '0');
+  late final TextEditingController b5000;
   bool b5000Fixed = false;
-  final b10000 = TextEditingController(text: '0');
+  late final TextEditingController b10000;
   bool b10000Fixed = false;
-  final b25000 = TextEditingController(text: '0');
+  late final TextEditingController b25000;
   bool b25000Fixed = false;
-  final b50000 = TextEditingController(text: '0');
+  late final TextEditingController b50000;
   bool b50000Fixed = false;
-  final b100000 = TextEditingController(text: '0');
+  late final TextEditingController b100000;
   bool b100000Fixed = false;
 
-  final folderController = TextEditingController(text: r'C:\Users\hsmbr\OneDrive\일정산1');
-  final memoController = TextEditingController();
+  late final TextEditingController folderController;
+  late final TextEditingController memoController;
 
   int _i(TextEditingController c) => int.tryParse(c.text.replaceAll(',', '').trim()) ?? 0;
 
@@ -58,20 +52,13 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
     return s.replaceAllMapped(reg, (m) => '${m[1]},');
   }
 
-  int get smallBillsSum => 1000 * _i(c1000) + 5000 * _i(c5000);
-  int get remainingLarge => 10000 * _i(c10000) + 50000 * _i(c50000); // 남기는금액(1만+5만)
-  int get bundlesSum =>
-      5000 * _i(b5000) +
-      10000 * _i(b10000) +
-      25000 * _i(b25000) +
-      50000 * _i(b50000) +
-      100000 * _i(b100000);
-
-  int get baseCash => _i(baseCashController);
-  int get shortage => _i(shortageController);
-
-  // 실제 입금액(임시 계산): (권종합계 + 남기는금액 + 밀어돈총합) - 부족한시제
-  int get actualDeposit => (smallBillsSum + remainingLarge + bundlesSum) - shortage;
+  int get smallBillsSum => _store.smallBillsSum;
+  int get bigBillsTotal => _store.bigBillsTotal;
+  int get bundlesSum => _store.bundlesSum;
+  int get baseCash => _store.baseCash;
+  int get missing => _store.missing;
+  int get autoKeep => _store.autoKeep;
+  int get actualDeposit => _store.actualDeposit;
 
   String get _dateStr {
     const days = ['월', '화', '수', '목', '금', '토', '일'];
@@ -82,29 +69,73 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
   @override
   void initState() {
     super.initState();
-    final all = <TextEditingController>[
-      baseCashController,
-      shortageController,
-      c1000,
-      c5000,
-      c10000,
-      c50000,
-      b5000,
-      b10000,
-      b25000,
-      b50000,
-      b100000,
-    ];
-    for (final c in all) {
-      c.addListener(() => setState(() {}));
-    }
+    authorController = TextEditingController(text: _store.author);
+    baseCashController = TextEditingController(text: _store.baseCash.toString());
+    c1000 = TextEditingController(text: _store.c1000.toString());
+    c5000 = TextEditingController(text: _store.c5000.toString());
+    c10000 = TextEditingController(text: _store.c10000.toString());
+    c50000 = TextEditingController(text: _store.c50000.toString());
+    b5000 = TextEditingController(text: _store.b5000.toString());
+    b10000 = TextEditingController(text: _store.b10000.toString());
+    b25000 = TextEditingController(text: _store.b25000.toString());
+    b50000 = TextEditingController(text: _store.b50000.toString());
+    b100000 = TextEditingController(text: _store.b100000.toString());
+    folderController = TextEditingController(text: _store.savedFolderPath);
+    memoController = TextEditingController(text: _store.memo);
+
+    authorController.addListener(() {
+      _store.update(() => _store.author = authorController.text);
+    });
+    baseCashController.addListener(() {
+      _store.update(() => _store.baseCash = _i(baseCashController));
+    });
+    c1000.addListener(() {
+      _store.update(() => _store.c1000 = _i(c1000));
+    });
+    c5000.addListener(() {
+      _store.update(() => _store.c5000 = _i(c5000));
+    });
+    c10000.addListener(() {
+      _store.update(() => _store.c10000 = _i(c10000));
+    });
+    c50000.addListener(() {
+      _store.update(() => _store.c50000 = _i(c50000));
+    });
+    b5000.addListener(() {
+      _store.update(() => _store.b5000 = _i(b5000));
+    });
+    b10000.addListener(() {
+      _store.update(() => _store.b10000 = _i(b10000));
+    });
+    b25000.addListener(() {
+      _store.update(() => _store.b25000 = _i(b25000));
+    });
+    b50000.addListener(() {
+      _store.update(() => _store.b50000 = _i(b50000));
+    });
+    b100000.addListener(() {
+      _store.update(() => _store.b100000 = _i(b100000));
+    });
+    folderController.addListener(() {
+      _store.update(() => _store.savedFolderPath = folderController.text);
+    });
+    memoController.addListener(() {
+      _store.update(() => _store.memo = memoController.text);
+    });
+
+    _store.addListener(_onStoreChanged);
+  }
+
+  void _onStoreChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   @override
   void dispose() {
+    _store.removeListener(_onStoreChanged);
     authorController.dispose();
     baseCashController.dispose();
-    shortageController.dispose();
     c1000.dispose();
     c5000.dispose();
     c10000.dispose();
@@ -189,7 +220,6 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
 
   void _reset() {
     baseCashController.text = '1000000';
-    shortageController.text = '0';
     for (final c in [c1000, c5000, c10000, c50000, b5000, b10000, b25000, b50000, b100000]) {
       c.text = '0';
     }
@@ -197,7 +227,7 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
   }
 
   Future<void> _pickExcelFolder() async {
-    final dir = await FilePicker.platform.getDirectoryPath(dialogTitle: '엑셀 불러올 폴더 선택');
+    final dir = await FilePicker.platform.getDirectoryPath(dialogTitle: '엑셀 저장 폴더 선택');
     if (!mounted) return;
     if (dir == null || dir.trim().isEmpty) return;
 
@@ -207,68 +237,11 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
     );
   }
 
-  Future<void> _saveExcel() async {
-    try {
-      final excel = Excel.createExcel();
-      final sheet = excel['현금정산'];
-
-      int r = 0;
-      void addRow(String k, dynamic v) {
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: r)).value = TextCellValue(k);
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: r)).value = TextCellValue('$v');
-        r++;
-      }
-
-      addRow('날짜', _dateStr);
-      addRow('작성자', authorController.text);
-      addRow('시제(기본준비금)', baseCashController.text);
-      addRow('부족한 시제', shortageController.text);
-      addRow('1,000원권(장)', c1000.text);
-      addRow('5,000원권(장)', c5000.text);
-      addRow('합산(1천+5천)', _fmtInt(smallBillsSum));
-      addRow('10,000원권(장)', c10000.text);
-      addRow('50,000원권(장)', c50000.text);
-      addRow('남기는금액(1만+5만)', _fmtInt(remainingLarge));
-      addRow('5,000원 묶음(개)', b5000.text);
-      addRow('10,000원 묶음(개)', b10000.text);
-      addRow('25,000원 묶음(개)', b25000.text);
-      addRow('50,000원 묶음(개)', b50000.text);
-      addRow('100,000원 묶음(개)', b100000.text);
-      addRow('밀어돈 총합계', _fmtInt(bundlesSum));
-      addRow('실제 입금액', _fmtInt(actualDeposit));
-      addRow('메모', memoController.text);
-
-      final bytes = excel.encode();
-      if (bytes == null) {
-        throw Exception('엑셀 인코딩 실패');
-      }
-
-      // 저장 위치: 사용자가 지정한 폴더가 있으면 우선 사용(가능할 때만),
-      // 아니면 앱 Documents 폴더로 저장
-      Directory baseDir;
-      final userDir = folderController.text.trim();
-      if (userDir.isNotEmpty && await Directory(userDir).exists()) {
-        baseDir = Directory(userDir);
-      } else {
-        baseDir = await getApplicationDocumentsDirectory();
-      }
-
-      final fileName =
-          '현금정산_${widget.date.year}${widget.date.month.toString().padLeft(2, '0')}${widget.date.day.toString().padLeft(2, '0')}.xlsx';
-      final outPath = p.join(baseDir.path, fileName);
-      final outFile = File(outPath);
-      await outFile.writeAsBytes(bytes, flush: true);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('엑셀 저장 완료: $outPath')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('엑셀 저장 실패: $e')),
-      );
-    }
+  void _confirmAndBack() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('현금정산 입력을 적용했습니다. 메인 화면의 저장 버튼으로 엑셀에 기록하세요.')),
+    );
+    Navigator.of(context).pop();
   }
 
   @override
@@ -277,9 +250,9 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
       appBar: AppBar(
         automaticallyImplyLeading: false,
         leading: IconButton(
-          tooltip: '엑셀 저장',
-          icon: const Icon(Icons.save, color: Colors.white),
-          onPressed: _saveExcel,
+          tooltip: '입력 적용 후 메인으로',
+          icon: const Icon(Icons.check, color: Colors.white),
+          onPressed: _confirmAndBack,
         ),
         title: const Text('[현금정산]', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.teal,
@@ -344,12 +317,7 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
             ),
             _row(
               label: '부족한 시제',
-              right: Row(
-                children: [
-                  _fixedToggle(shortageFixed, (nv) => setState(() => shortageFixed = nv)),
-                  Expanded(child: _numField(shortageController, fixed: shortageFixed, textColor: Colors.red)),
-                ],
-              ),
+              right: _roNumber(missing, color: Colors.red),
               bg: Colors.yellow[50],
             ),
 
@@ -459,7 +427,7 @@ class _CashSettlementScreenState extends State<CashSettlementScreen> {
             const Divider(height: 1),
             _row(
               label: '남기는금액(1만+5만)',
-              right: _roNumber(remainingLarge, color: Colors.green),
+              right: _roNumber(autoKeep, color: Colors.green),
               bg: Colors.green[50],
             ),
             _row(

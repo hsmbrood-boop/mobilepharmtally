@@ -1,8 +1,13 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'cash_settlement_screen.dart';
 import 'holiday_calendar_picker.dart';
+import 'pharm_tally_excel.dart';
+import 'settlement_store.dart';
 
 void main() {
   runApp(const PharmTallyApp());
@@ -15,6 +20,7 @@ class PharmTallyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'PharmTally',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.teal),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -63,6 +69,18 @@ class _SalesScreenState extends State<SalesScreen> {
         copayController, bottleController]) {
       c.addListener(calculate);
     }
+    SettlementStore.instance.addListener(_onStoreChanged);
+  }
+
+  @override
+  void dispose() {
+    SettlementStore.instance.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  void _onStoreChanged() {
+    if (!mounted) return;
+    calculate();
   }
 
   void calculate() {
@@ -77,7 +95,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
     setState(() {
       cardOtc = cardTotal - cardCopay;
-      cashIncome = 0;
+      cashIncome = SettlementStore.instance.actualDeposit.toDouble();
       grandTotal = cardTotal + cashIncome + adj;
       salesOtc = grandTotal - copay;
     });
@@ -156,20 +174,61 @@ class _SalesScreenState extends State<SalesScreen> {
     return '${selectedDate.year}-${selectedDate.month.toString().padLeft(2,'0')}-${selectedDate.day.toString().padLeft(2,'0')} (${days[selectedDate.weekday - 1]})';
   }
 
+  int _toInt(String s) =>
+      int.tryParse(s.replaceAll(',', '').trim()) ?? 0;
+
+  Future<void> _save() async {
+    final store = SettlementStore.instance;
+
+    String? folder = store.savedFolderPath.trim();
+    if (folder.isEmpty || !await Directory(folder).exists()) {
+      final picked = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '엑셀 저장 폴더 선택',
+      );
+      if (!mounted) return;
+      if (picked == null || picked.trim().isEmpty) return;
+      folder = picked;
+      store.update(() => store.savedFolderPath = picked);
+    }
+
+    final sales = SalesInput(
+      date: selectedDate,
+      rxCount: _toInt(rxController.text),
+      copay: _toInt(copayController.text),
+      cardTotal: _toInt(cardTotalController.text),
+      cardCopay: _toInt(cardCopayController.text),
+      bottle: _toInt(bottleController.text),
+      adjustments: adjRows
+          .map((r) => AdjustmentEntry(
+                name: r['name']!.text,
+                amount: _toInt(r['value']!.text),
+              ))
+          .toList(),
+    );
+
+    try {
+      final outPath = await savePharmTallyXlsx(
+        store: store,
+        sales: sales,
+        folder: folder,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('저장 완료: $outPath')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('저장 실패: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('PharmTally', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.teal,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save, color: Colors.white),
-            onPressed: () {},
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
+      body: SafeArea(
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
@@ -230,6 +289,11 @@ class _SalesScreenState extends State<SalesScreen> {
                   tooltip: '달력',
                   icon: const Icon(Icons.calendar_month),
                   onPressed: pickDate,
+                ),
+                IconButton(
+                  tooltip: '저장',
+                  icon: const Icon(Icons.save, color: Colors.teal),
+                  onPressed: _save,
                 ),
               ],
             ),
@@ -327,6 +391,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
             const SizedBox(height: 80),
           ],
+        ),
         ),
       ),
     );
