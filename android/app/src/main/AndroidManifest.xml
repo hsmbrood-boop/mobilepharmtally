@@ -9,6 +9,13 @@
         android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!-- 새 엑셀 파일이 들어왔을 때 로컬 알림을 띄우기 위함. Android 13+ 에서는
+         사용자 동의가 필요한 런타임 권한. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 폰을 재부팅해도 폴더 감시 작업이 다시 등록되도록 (WorkManager
+         내부 BootReceiver 가 이 권한을 사용). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:label="PharmTally"
         android:name="${applicationName}"

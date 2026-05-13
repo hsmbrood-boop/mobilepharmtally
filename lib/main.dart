@@ -11,8 +11,10 @@ import 'package:simple_gesture_detector/simple_gesture_detector.dart';
 
 import 'brand_splash.dart';
 import 'cash_settlement_screen.dart';
+import 'folder_watcher.dart';
 import 'holiday_calendar_picker.dart';
 import 'korean_holidays.dart';
+import 'notifications.dart';
 import 'pharm_tally_excel.dart';
 
 import 'settlement_store.dart';
@@ -25,6 +27,20 @@ Future<void> main() async {
   // runApp 이전에 끝낸다. 시작 시 추가 브랜딩 화면을 띄우지 않아 화면이
   // 한 번만 바뀐다. (브랜딩 글자는 종료 시에 한 번만 표시.)
   await SettlementStore.instance.load();
+
+  // 로컬 알림 초기화 (알림 탭 → payload(YYYY-MM-DD) 가 pendingTargetDate 로).
+  // SalesScreen 이 이 값을 watch 해서 해당 날짜로 자동 이동한다.
+  await PharmTallyNotifications.initialize();
+  // 콜드 스타트가 알림 탭으로 시작된 경우, launch payload 를 미리 채워둔다.
+  final launchPayload = await PharmTallyNotifications.consumeLaunchPayload();
+  if (launchPayload != null && launchPayload.isNotEmpty) {
+    PharmTallyNotifications.pendingTargetDate.value = launchPayload;
+  }
+
+  // 안드로이드 백그라운드 폴더 감시 작업 등록 (iOS 는 no-op).
+  // 권한이 아직 없거나 폴더가 비어있어도 안전 — 콜백 안에서 가드함.
+  await initializeFolderWatcher();
+
   runApp(const PharmTallyApp());
 }
 
@@ -103,11 +119,25 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addObserver(this);
 
+    // 알림 탭으로 들어온 날짜가 있으면 그 날짜로 자동 이동한다. 콜드
+    // 스타트 시점에 채워진 값과, 앱이 떠 있는 동안 새로 도착한 알림 모두
+    // 같은 ValueNotifier 를 통해 처리. 처리한 값은 곧바로 null 로 비워서
+    // 같은 알림이 중복 처리되지 않게 한다.
+    PharmTallyNotifications.pendingTargetDate
+        .addListener(_handlePendingTargetDate);
+
     // 앱 첫 진입 시: 해당 날짜 파일이 있으면 자동으로 불러와 폼에 채움.
     // 동기화 앱이 파일을 잠깐 잠그는 경우 첫 읽기만 실패할 수 있어,
     // 「파일은 있는데 폼이 비어 있을 때만」 짧게 한 번 더 시도한다.
     // (매번 두 번 읽으면 두 번째가 실패했을 때 예외 처리로 폼이 통째로 비워지는 버그가 있었음.)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 알림 권한(Android 13+) 요청 — 한 번만 시도하면 됨. 거부돼도 무해.
+      // 본격적인 폼 로드 전에 짧게 처리.
+      await PharmTallyNotifications.requestRuntimePermissions();
+
+      // 알림 탭으로 시작된 경우: 미리 채워둔 payload 를 소비해서 그 날짜로 이동.
+      _handlePendingTargetDate();
+
       await _loadForDate(selectedDate, showFeedback: false);
       await Future<void>.delayed(const Duration(milliseconds: 700));
       if (!mounted) return;
@@ -130,6 +160,19 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// 알림 payload(`YYYY-MM-DD`) 가 도착하면 해당 날짜로 점프.
+  void _handlePendingTargetDate() {
+    final raw = PharmTallyNotifications.pendingTargetDate.value;
+    if (raw == null || raw.isEmpty) return;
+    final parsed = DateTime.tryParse(raw);
+    PharmTallyNotifications.pendingTargetDate.value = null;
+    if (parsed == null) return;
+    if (!mounted) return;
+    // 이미 그 날짜를 보고 있다면 다시 로드해서 새로 도착한 파일을 즉시 반영.
+    final normalized = DateTime(parsed.year, parsed.month, parsed.day);
+    _onDateChanged(normalized);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -144,6 +187,8 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     SettlementStore.instance.removeListener(_onStoreChanged);
+    PharmTallyNotifications.pendingTargetDate
+        .removeListener(_handlePendingTargetDate);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

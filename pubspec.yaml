@@ -46,6 +46,13 @@ dependencies:
   permission_handler: ^12.0.1
   archive: ^3.6.1
   xml: ^6.6.1
+  # 백그라운드에서 OneDrive 동기화 폴더에 새 엑셀이 들어왔는지 주기적으로
+  # 확인하기 위한 패키지. (안드로이드 WorkManager wrapper.)
+  # 0.5.x 는 옛 v1 Android embedding 을 사용해 최신 Flutter 와 빌드가
+  # 안 되므로 0.9.x 신형 v2 embedding 버전을 사용한다.
+  workmanager: ^0.9.0+3
+  # 신규 엑셀이 감지됐을 때 로컬 알림을 보내기 위한 패키지.
+  flutter_local_notifications: ^17.2.3
 
 dev_dependencies:
   flutter_test:

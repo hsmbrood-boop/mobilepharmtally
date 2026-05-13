@@ -25,6 +25,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications 가 java.time 등 신형 API 를 minSdk
+        // 이하에서도 쓰기 위해 core library desugaring 을 활성화.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -68,4 +71,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // core library desugaring 런타임. `compileOptions` 의 옵션과 짝.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
