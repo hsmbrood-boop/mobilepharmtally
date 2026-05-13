@@ -1,8 +1,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 공유 저장소(예: /storage/emulated/0/OneSyncFiles) 의 임의 폴더에
+         엑셀을 직접 읽고/쓰기 위해 필요한 권한들.
+         - Android 10 이하: READ/WRITE_EXTERNAL_STORAGE + requestLegacyExternalStorage
+         - Android 11+    : MANAGE_EXTERNAL_STORAGE (사용자가 설정에서 "모든 파일 접근" 허용 필요) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <application
-        android:label="pharm_tally"
+        android:label="PharmTally"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

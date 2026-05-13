@@ -1,0 +1,23 @@
+# PharmTally release 서명 키 정보 (샘플).
+#
+# 이 파일을 복사해 `android/key.properties` 로 저장하고 실제 비밀번호를
+# 채워서 사용합니다. `key.properties` 자체는 `.gitignore` 에 의해 절대
+# 깃에 올라가지 않으므로 비밀번호가 노출되지 않습니다.
+#
+# 사용 절차:
+# 1) 이 파일을 복사해 `android/key.properties` 로 저장
+# 2) keystore 를 만든 뒤(아래 명령), 입력했던 비밀번호와 alias 를 채움
+# 3) `flutter build appbundle --release` 실행
+#
+# keystore 생성 명령 (PowerShell, 프로젝트 루트에서):
+#   keytool -genkey -v -keystore android\app\pharm_tally_release.jks `
+#           -keyalg RSA -keysize 2048 -validity 10000 -alias pharm_tally
+#
+# ⚠️ 한 번 만든 keystore 와 비밀번호는 절대 잃어버리면 안 됩니다.
+#    잃어버리면 같은 패키지(com.orcholdings.pharmtally) 로 앱을 다시는
+#    업데이트할 수 없습니다. 외장 USB·클라우드 등에 반드시 백업하세요.
+
+storePassword=keystore_생성시_입력한_비밀번호
+keyPassword=alias_생성시_입력한_비밀번호
+keyAlias=pharm_tally
+storeFile=pharm_tally_release.jks

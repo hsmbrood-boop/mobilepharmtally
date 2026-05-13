@@ -1,4 +1,4 @@
-package com.example.pharm_tally
+package com.orcholdings.pharmtally
 
 import io.flutter.embedding.android.FlutterActivity
 

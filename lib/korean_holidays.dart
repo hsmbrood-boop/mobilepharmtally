@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// 한국 공휴일 판정.
 ///
 /// - 양력 고정 공휴일은 함수로 판정
@@ -6,6 +8,18 @@
 /// - 데이터 테이블은 정부 발표(관공서의 공휴일에 관한 규정) 기준이며,
 ///   향후 임시공휴일이나 정부 추가 지정이 있을 경우 수동 갱신이 필요합니다.
 class KoreanHolidays {
+  /// 상단 날짜 문자열 색: 토요일 파랑, 일요일·공휴일 빨강, 그 외 어두운 회색.
+  static Color dateBarColor(DateTime day) {
+    final d = DateTime(day.year, day.month, day.day);
+    if (d.weekday == DateTime.sunday || isHoliday(d)) {
+      return Colors.red;
+    }
+    if (d.weekday == DateTime.saturday) {
+      return Colors.blue;
+    }
+    return Colors.black87;
+  }
+
   static bool isHoliday(DateTime day) {
     final d = DateTime(day.year, day.month, day.day);
     if (_isSolarFixed(d)) return true;

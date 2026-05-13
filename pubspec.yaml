@@ -37,10 +37,15 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   table_calendar: ^3.2.0
+  simple_gesture_detector: ^0.2.1
   file_picker: ^9.2.1
   excel: ^4.0.6
   path_provider: ^2.1.5
   path: ^1.9.1
+  shared_preferences: ^2.5.5
+  permission_handler: ^12.0.1
+  archive: ^3.6.1
+  xml: ^6.6.1
 
 dev_dependencies:
   flutter_test:
@@ -52,6 +57,34 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.4
+
+# App launcher icons. PharmTally artwork used for all platforms that support it.
+# 어댑티브 아이콘 foreground 는 안드로이드 12+ 원형 마스크 안에 가득 차도록
+# 그림이 캔버스의 ~62% 를 차지하게 별도로 가공한 PNG 를 사용.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  windows:
+    generate: true
+    icon_size: 256
+  image_path: assets/icons/pharm_tally_app_icon.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/icons/pharm_tally_app_icon_foreground.png
+
+# 앱 시작 화면(스플래시): 안드로이드 12+ 는 240dp 원형 마스크에 192dp 안전영역만 보이므로
+# 가장자리가 잘리지 않게 충분히 패딩이 들어간 별도 splash 이미지를 사용한다.
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/icons/pharm_tally_splash.png
+  android: true
+  ios: true
+  web: false
+  android_12:
+    image: assets/icons/pharm_tally_splash.png
+    color: "#FFFFFF"
+  fullscreen: false
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -66,6 +99,8 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    - assets/icons/pharm_tally_app_icon.png
+    - assets/icons/pharm_tally_splash.png
     - assets/icons/money_bag.png
     - assets/icons/won_coin.png
 

@@ -1,6 +1,5 @@
 import 'dart:io' show Directory, File, Platform;
 
-import 'package:excel/excel.dart' hide Border;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -8,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import 'holiday_calendar_picker.dart';
+import 'pharm_tally_excel.dart';
 import 'settlement_store.dart';
 
 /// 매출 통계(상세 매출 통계) 화면.
@@ -15,9 +15,14 @@ import 'settlement_store.dart';
 /// - [SettlementStore.savedFolderPath]에 저장된 일별 엑셀 파일들을 읽어
 ///   기간/일별·월별 단위로 집계 후 표 + 합계/평균을 표시합니다.
 /// - 모바일 진입 시 자동으로 가로 모드로 강제, 종료 시 원복.
-/// - 엑셀 저장 버튼/데이터 폴더 경로 표시는 제외 (메인 저장 폴더를 그대로 사용).
+/// - 엑셀 저장은 하지 않으며, 메인에서 지정한 데이터 폴더의 일별 xlsx 를 읽습니다.
 class StatisticsScreen extends StatefulWidget {
-  const StatisticsScreen({super.key});
+  const StatisticsScreen({super.key, this.initialDate});
+
+  /// 통계 화면을 처음 열 때 기본으로 보여줄 기준 날짜. 이 날짜가 속한 달의
+  /// 1일 ~ 말일 범위가 자동으로 선택된다(예: 2025-04-11 → 2025-04-01 ~
+  /// 2025-04-30). null 이면 "이번 달 1일 ~ 오늘" 을 기본으로 사용한다.
+  final DateTime? initialDate;
 
   @override
   State<StatisticsScreen> createState() => _StatisticsScreenState();
@@ -66,12 +71,26 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   String? _error;
   List<_AggregatedRow> _rows = [];
 
+  late final ScrollController _tableHScrollController;
+  late final ScrollController _summaryHScrollController;
+  bool _syncingHorizontalScroll = false;
+
   @override
   void initState() {
     super.initState();
-    final today = DateTime.now();
-    _startDate = DateTime(today.year, today.month, 1);
-    _endDate = DateTime(today.year, today.month, today.day);
+    _tableHScrollController = ScrollController();
+    _summaryHScrollController = ScrollController();
+    _tableHScrollController.addListener(_onTableHorizontalScroll);
+    _summaryHScrollController.addListener(_onSummaryHorizontalScroll);
+
+    // 기준 날짜: widget.initialDate 가 있으면 그 달의 1일 ~ 말일을, 없으면
+    // 오늘이 속한 달의 1일 ~ 오늘 범위를 기본으로 사용한다. 호출자가 보고
+    // 있던 날짜의 한 달치 일별 데이터를 바로 볼 수 있게 한다.
+    final base = widget.initialDate ?? DateTime.now();
+    _startDate = DateTime(base.year, base.month, 1);
+    // 다음 달 1일에서 하루 빼면 해당 월의 말일이 된다.
+    _endDate = DateTime(base.year, base.month + 1, 1)
+        .subtract(const Duration(days: 1));
 
     if (!kIsWeb) {
       try {
@@ -101,7 +120,34 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         }
       } catch (_) {}
     }
+
+    _tableHScrollController.removeListener(_onTableHorizontalScroll);
+    _summaryHScrollController.removeListener(_onSummaryHorizontalScroll);
+    _tableHScrollController.dispose();
+    _summaryHScrollController.dispose();
+
     super.dispose();
+  }
+
+  void _onTableHorizontalScroll() {
+    _mirrorHorizontalScroll(_tableHScrollController, _summaryHScrollController);
+  }
+
+  void _onSummaryHorizontalScroll() {
+    _mirrorHorizontalScroll(_summaryHScrollController, _tableHScrollController);
+  }
+
+  void _mirrorHorizontalScroll(ScrollController from, ScrollController to) {
+    if (_syncingHorizontalScroll) return;
+    if (!from.hasClients || !to.hasClients) return;
+    final target = from.offset.clamp(
+      to.position.minScrollExtent,
+      to.position.maxScrollExtent,
+    );
+    if ((to.offset - target).abs() < 1.0) return;
+    _syncingHorizontalScroll = true;
+    to.jumpTo(target);
+    _syncingHorizontalScroll = false;
   }
 
   Future<void> _pickStart() async {
@@ -174,7 +220,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     if (folder.isEmpty || !Directory(folder).existsSync()) {
       setState(() {
         _rows = [];
-        _error = '저장 폴더가 지정되지 않았습니다. 메인 화면의 [저장] 버튼을 한 번 눌러 폴더를 선택해 주세요.';
+        _error = '데이터 폴더가 지정되지 않았습니다. 통계 화면 상단의 [폴더] 또는 현금정산의 [데이터폴더설정]으로 경로를 지정해 주세요.';
         _loading = false;
       });
       return;
@@ -229,56 +275,47 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       if (dd.isBefore(s) || dd.isAfter(e)) continue;
 
       try {
-        final bytes = await file.readAsBytes();
-        final excel = Excel.decodeBytes(bytes);
-        final sheet = excel.tables.values.isEmpty ? null : excel.tables.values.first;
-        if (sheet == null) continue;
-
-        final rec = _Record(date: dd);
-        for (final row in sheet.rows) {
-          if (row.length < 4) continue;
-          final lblRaw = row[2]?.value;
-          final valRaw = row[3]?.value;
-          if (lblRaw == null) continue;
-          final lbl = _cellToString(lblRaw).trim();
-          if (lbl.isEmpty) continue;
-          final val = _cellToInt(valRaw);
-          switch (lbl) {
-            case '처방전수':
-              rec.rx = val;
-              break;
-            case '본인부담금':
-              rec.copay = val;
-              break;
-            case '카드매출(총매출)':
-              rec.cardTot = val;
-              break;
-            case '카드매출(본인부담금)':
-              rec.cardCopay = val;
-              break;
-            case '카드매출(일반약)':
-              rec.cardOtc = val;
-              break;
-            case '매약(일반약)':
-              rec.salesOtc = val;
-              break;
-            case '통약':
-              rec.bottle = val;
-              break;
-            case '현금 수입(현입)':
-              rec.cashIn = val;
-              break;
-            case '현금 합계':
-            case '매출총액(현금+카드+보정)':
-            case '매출총액(합계)':
-            case '매출총액(카드+현금+보정)':
-              rec.cashTot = val;
-              break;
-          }
+        var bytes = await file.readAsBytes();
+        var stats = parseSalesStatsFromXlsxBytes(bytes);
+        if (bytes.length > 2800 &&
+            stats.rx == 0 &&
+            stats.cardTot == 0 &&
+            stats.copay == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          bytes = await file.readAsBytes();
+          stats = parseSalesStatsFromXlsxBytes(bytes);
         }
+        final rec = _Record(date: dd)
+          ..rx = stats.rx
+          ..copay = stats.copay
+          ..cardTot = stats.cardTot
+          ..cardCopay = stats.cardCopay
+          ..cardOtc = stats.cardOtc
+          ..salesOtc = stats.salesOtc
+          ..bottle = stats.bottle
+          ..cashIn = stats.cashIn
+          ..cashTot = stats.cashTot;
         out.add(rec);
       } catch (_) {
-        continue;
+        // 동기화 중 파일 잠금·불완전 쓰기 등으로 첫 읽기만 실패하는 경우 한 번 재시도.
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+          final bytes = await file.readAsBytes();
+          final stats = parseSalesStatsFromXlsxBytes(bytes);
+          final rec = _Record(date: dd)
+            ..rx = stats.rx
+            ..copay = stats.copay
+            ..cardTot = stats.cardTot
+            ..cardCopay = stats.cardCopay
+            ..cardOtc = stats.cardOtc
+            ..salesOtc = stats.salesOtc
+            ..bottle = stats.bottle
+            ..cashIn = stats.cashIn
+            ..cashTot = stats.cashTot;
+          out.add(rec);
+        } catch (_) {
+          continue;
+        }
       }
     }
     return out;
@@ -315,29 +352,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       agg.cashTot += r.cashTot;
     }
     return map.values.toList();
-  }
-
-  String _cellToString(CellValue v) {
-    if (v is TextCellValue) {
-      try {
-        return v.value.toString();
-      } catch (_) {
-        return v.toString();
-      }
-    }
-    return v.toString();
-  }
-
-  int _cellToInt(CellValue? v) {
-    if (v == null) return 0;
-    if (v is IntCellValue) return v.value;
-    if (v is DoubleCellValue) return v.value.round();
-    if (v is TextCellValue) {
-      final s = _cellToString(v).replaceAll(',', '').trim();
-      return int.tryParse(s) ?? double.tryParse(s)?.round() ?? 0;
-    }
-    final s = v.toString().replaceAll(',', '').trim();
-    return int.tryParse(s) ?? double.tryParse(s)?.round() ?? 0;
   }
 
   String _fmtDate(DateTime d) {
@@ -495,8 +509,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     ];
 
     return Scrollbar(
+      controller: _tableHScrollController,
       thumbVisibility: true,
       child: SingleChildScrollView(
+        controller: _tableHScrollController,
         scrollDirection: Axis.horizontal,
         child: SingleChildScrollView(
           child: DataTable(
@@ -560,6 +576,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       margin: const EdgeInsets.all(8),
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       child: SingleChildScrollView(
+        controller: _summaryHScrollController,
         scrollDirection: Axis.horizontal,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Android release signing — keystore 와 비밀번호 파일은 절대 깃에 올리지 말 것.
+# 잃어버리면 앱 업데이트가 영원히 불가능하므로 별도로 안전한 곳에 백업 필수.
+/android/key.properties
+/android/app/*.jks
+/android/app/*.keystore
