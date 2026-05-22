@@ -62,6 +62,37 @@ String pharmTallyFileNamePrefix(DateTime d) {
   return '$y-$m-$day';
 }
 
+/// 폴더 안의 xlsx 파일명에서 날짜를 파싱해, [before] 이전 날짜 중 가장 최근을 반환.
+/// [before]를 생략하면 전체 중 가장 최근 날짜를 반환.
+/// 임시 잠금 파일(~$...)은 제외. 해당하는 파일이 없으면 null.
+Future<DateTime?> findMostRecentXlsxDate(String folder, {DateTime? before}) async {
+  final dir = Directory(folder);
+  if (!await dir.exists()) return null;
+
+  final dateRe = RegExp(r'^(\d{4})-(\d{2})-(\d{2})');
+  DateTime? latest;
+
+  await for (final entity in dir.list()) {
+    if (entity is! File) continue;
+    final name = p.basename(entity.path);
+    if (!name.toLowerCase().endsWith('.xlsx')) continue;
+    if (name.startsWith('~')) continue;
+
+    final m = dateRe.firstMatch(name);
+    if (m == null) continue;
+
+    final date = DateTime(
+      int.parse(m.group(1)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(3)!),
+    );
+    if (before != null && !date.isBefore(before)) continue;
+    if (latest == null || date.isAfter(latest)) latest = date;
+  }
+
+  return latest;
+}
+
 /// 정확한 `YYYY-MM-DD (요일).xlsx` 가 없으면 같은 날짜 접두어를 가진 xlsx 를 찾는다.
 /// (PC·동기화 도구에 따라 괄호·공백·유니코드가 조금 달라도 불러오기 가능하게 함.)
 Future<String?> resolvePharmTallyXlsxPath({

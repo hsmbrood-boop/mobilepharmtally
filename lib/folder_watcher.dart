@@ -41,7 +41,7 @@ void pharmTallyCallbackDispatcher() {
 
 Future<void> _scanFolderAndNotify() async {
   // 안드로이드 외 플랫폼에서는 동작하지 않음 (iOS 는 WorkManager 미지원).
-  if (!Platform.isAndroid) return;
+  if (kIsWeb || !Platform.isAndroid) return;
 
   final prefs = await SharedPreferences.getInstance();
   final folder = (prefs.getString(_kFolderPathKey) ?? '').trim();
@@ -153,7 +153,7 @@ String? _extractIsoDate(String fileName) {
 /// iOS 는 WorkManager 가 지원하지 않으므로 no-op. (iOS 에서 동일 기능을 원할 때는
 /// BackgroundTasks / BGTaskScheduler 를 별도로 도입해야 함.)
 Future<void> initializeFolderWatcher() async {
-  if (!Platform.isAndroid) return;
+  if (kIsWeb || !Platform.isAndroid) return;
   try {
     await Workmanager().initialize(
       pharmTallyCallbackDispatcher,

@@ -41,11 +41,22 @@ Future<void> main() async {
   // 권한이 아직 없거나 폴더가 비어있어도 안전 — 콜백 안에서 가드함.
   await initializeFolderWatcher();
 
-  runApp(const PharmTallyApp());
+  // 알림 탭으로 시작된 경우 그 날짜, 아니면 오늘 파일이 있으면 오늘,
+  // 없으면 가장 최근 과거 파일 날짜를 초기 날짜로 사용.
+  // main() 에서 미리 결정해서 첫 프레임부터 올바른 날짜가 표시되도록 함.
+  DateTime initialDate = DateTime.now();
+  if (launchPayload != null && launchPayload.isNotEmpty) {
+    final parsed = DateTime.tryParse(launchPayload);
+    if (parsed != null) initialDate = DateTime(parsed.year, parsed.month, parsed.day);
+  }
+
+  runApp(PharmTallyApp(initialDate: initialDate));
 }
 
 class PharmTallyApp extends StatelessWidget {
-  const PharmTallyApp({super.key});
+  const PharmTallyApp({super.key, required this.initialDate});
+
+  final DateTime initialDate;
 
   @override
   Widget build(BuildContext context) {
@@ -69,20 +80,22 @@ class PharmTallyApp extends StatelessWidget {
       // 시작 시 추가 브랜딩 화면 없이 시스템 스플래시 → 본 화면 직행.
       // 브랜딩 글자(Developed by HSM of Orc Holdings)는 종료 시에만 BrandSplash
       // 로 한 번 표시된다.
-      home: const SalesScreen(),
+      home: SalesScreen(initialDate: initialDate),
     );
   }
 }
 
 class SalesScreen extends StatefulWidget {
-  const SalesScreen({super.key});
+  const SalesScreen({super.key, required this.initialDate});
+
+  final DateTime initialDate;
 
   @override
   State<SalesScreen> createState() => _SalesScreenState();
 }
 
 class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
-  DateTime selectedDate = DateTime.now();
+  late DateTime selectedDate;
 
   final rxController = TextEditingController(text: '0');
   final copayController = TextEditingController(text: '0');
@@ -105,6 +118,7 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    selectedDate = widget.initialDate;
     for (int i = 0; i < 5; i++) {
       adjRows.add({
         'name': TextEditingController(),
@@ -507,7 +521,6 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
 
     final data = loaded;
     if (data == null) {
-      // 파일이 없을 때: 조용히 폼만 초기화 (뷰어 모드에서는 스낵바 없음).
       _resetForm();
       return;
     }
@@ -701,7 +714,9 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
 
     _exitingWithSplash = true;
     // 시작 화면과 동일한 디자인의 종료용 브랜딩 화면을 전체 화면으로
-    // 띄우고, 짧은 지연 뒤 시스템에 앱 종료를 요청.
+    // 띄우고, 짧은 지연 뒤 프로세스를 완전히 종료(exit(0)).
+    // SystemNavigator.pop() 은 Activity 만 닫고 프로세스가 백그라운드에
+    // 남으므로 exit(0) 을 사용한다.
     Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder(
         opaque: true,
@@ -714,7 +729,7 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
       ),
     );
     Future.delayed(const Duration(milliseconds: 1100), () {
-      SystemNavigator.pop();
+      exit(0);
     });
   }
 
