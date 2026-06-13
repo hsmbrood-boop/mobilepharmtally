@@ -11,6 +11,7 @@ import 'package:simple_gesture_detector/simple_gesture_detector.dart';
 
 import 'brand_splash.dart';
 import 'cash_settlement_screen.dart';
+import 'folder_watch_service.dart';
 import 'folder_watcher.dart';
 import 'holiday_calendar_picker.dart';
 import 'korean_holidays.dart';
@@ -39,7 +40,13 @@ Future<void> main() async {
 
   // 안드로이드 백그라운드 폴더 감시 작업 등록 (iOS 는 no-op).
   // 권한이 아직 없거나 폴더가 비어있어도 안전 — 콜백 안에서 가드함.
+  // WorkManager(15분 주기) 는 포그라운드 서비스가 도즈/시스템에 의해 종료됐을
+  // 때를 대비한 백스톱으로 함께 둔다. 중복 알림은 seen-files 로 방지됨.
   await initializeFolderWatcher();
+
+  // 포그라운드 서비스(1분 주기, "거의 실시간") 옵션 초기화. 실제 시작은
+  // 첫 화면 진입 후 권한 요청과 함께 한다.
+  initFolderWatchService();
 
   // 알림 탭으로 시작된 경우 그 날짜, 아니면 오늘 파일이 있으면 오늘,
   // 없으면 가장 최근 과거 파일 날짜를 초기 날짜로 사용.
@@ -149,9 +156,10 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
       // 본격적인 폼 로드 전에 짧게 처리.
       await PharmTallyNotifications.requestRuntimePermissions();
 
-      // 배터리 최적화 제외 요청 — 도즈로 밤에 폴더 감시 알림이 1~2시간씩
-      // 밀리는 것을 줄인다. 한 번만 물어보고, 거부돼도 무해.
-      await requestIgnoreBatteryOptimizations();
+      // "거의 실시간"(1분 주기) 포그라운드 폴더 감시 서비스 시작.
+      // 내부에서 알림 권한 + 배터리 최적화 제외를 함께 요청한다. 이미 돌고
+      // 있으면 no-op. (상시 "폴더 감시 중" 알림이 하나 떠 있게 된다.)
+      await startFolderWatchService();
 
       // 알림 탭으로 시작된 경우: 미리 채워둔 payload 를 소비해서 그 날짜로 이동.
       _handlePendingTargetDate();

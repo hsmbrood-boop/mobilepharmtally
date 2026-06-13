@@ -23,9 +23,6 @@ const String _kLastScanMillisKey = 'pharm_tally.folderWatch.lastScanMillis';
 /// 알림은 한 번만 가도록 중복을 방지. 너무 커지지 않게 최근 500개만 유지.
 const String _kSeenFilesKey = 'pharm_tally.folderWatch.seenFiles';
 
-/// 배터리 최적화 제외를 이미 한 번 요청했는지 여부. 거부당해도 매번
-/// 다시 묻지 않도록 한 번만 자동으로 띄운다.
-const String _kBatteryOptAskedKey = 'pharm_tally.folderWatch.batteryOptAsked';
 
 /// WorkManager 콜백. **반드시 top-level / static 이어야 하며,
 /// `@pragma('vm:entry-point')` 가 붙어 있어야 release 모드에서 살아남는다.**
@@ -36,7 +33,7 @@ void pharmTallyCallbackDispatcher() {
     try {
       // 백그라운드 isolate 는 알림 플러그인을 새로 초기화해야 한다.
       await PharmTallyNotifications.initialize();
-      await _scanFolderAndNotify();
+      await pharmTallyScanFolderAndNotify();
     } catch (e, st) {
       debugPrint('[folder_watch] error: $e\n$st');
     }
@@ -44,7 +41,13 @@ void pharmTallyCallbackDispatcher() {
   });
 }
 
-Future<void> _scanFolderAndNotify() async {
+/// 저장된 폴더를 한 번 스캔해서 새 엑셀 파일이 있으면 알림을 보낸다.
+///
+/// WorkManager 주기 작업과 포그라운드 서비스(짧은 주기) 양쪽에서 같은 로직을
+/// 공유한다. 중복 알림은 `_kSeenFilesKey` 로 방지하므로 두 경로가 같은 파일을
+/// 동시에 봐도 알림은 한 번만 간다. 호출 전 [PharmTallyNotifications.initialize]
+/// 가 끝나 있어야 한다.
+Future<void> pharmTallyScanFolderAndNotify() async {
   // 안드로이드 외 플랫폼에서는 동작하지 않음 (iOS 는 WorkManager 미지원).
   if (kIsWeb || !Platform.isAndroid) return;
 
@@ -184,25 +187,23 @@ Future<void> initializeFolderWatcher() async {
   }
 }
 
-/// 배터리 최적화(도즈)에서 이 앱을 제외해 달라고 사용자에게 한 번 요청한다.
+/// 배터리 최적화(도즈)에서 이 앱을 제외해 달라고 사용자에게 요청한다.
 ///
 /// 도즈가 깊어지면 15분 주기 백그라운드 스캔이 밤에 1~2시간씩 밀린다.
 /// 최적화에서 제외되면 주기에 훨씬 가깝게(거의 15분마다) 실행된다.
 /// (주기 자체를 15분보다 짧게 만들지는 못함 — 그건 WorkManager 의 OS 하한.)
 ///
-/// 이미 제외돼 있거나, 이전에 이미 한 번 물어봤으면 다시 묻지 않는다.
+/// 아직 제외되지 않았다면 앱을 켤 때마다 다시 요청한다. 한 번 거부했다고
+/// 영영 묻지 않으면 도즈 지연이 계속 남기 때문. 이미 제외돼 있으면
+/// `isGranted` 로 곧바로 빠져나가므로 다이얼로그는 더 이상 뜨지 않는다.
 Future<void> requestIgnoreBatteryOptimizations() async {
   if (kIsWeb || !Platform.isAndroid) return;
   try {
-    // 이미 제외돼 있으면 아무것도 안 함.
+    // 이미 제외돼 있으면 아무것도 안 함 (다이얼로그도 안 뜸).
     if (await Permission.ignoreBatteryOptimizations.isGranted) return;
 
-    // 한 번 물어본 적 있으면(거부 포함) 다시 띄우지 않는다.
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_kBatteryOptAskedKey) ?? false) return;
-    await prefs.setBool(_kBatteryOptAskedKey, true);
-
-    // 시스템 다이얼로그("배터리 최적화를 사용 안 함으로 설정할까요?") 표시.
+    // 아직 제외 안 됨 → 시스템 다이얼로그("배터리 최적화를 사용 안 함으로
+    // 설정할까요?")를 띄운다. 사용자가 허용할 때까지 다음 실행에서도 다시 뜬다.
     await Permission.ignoreBatteryOptimizations.request();
   } catch (e, st) {
     debugPrint('[folder_watch] battery opt request failed: $e\n$st');

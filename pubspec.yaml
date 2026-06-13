@@ -51,6 +51,10 @@ dependencies:
   # 0.5.x 는 옛 v1 Android embedding 을 사용해 최신 Flutter 와 빌드가
   # 안 되므로 0.9.x 신형 v2 embedding 버전을 사용한다.
   workmanager: ^0.9.0+3
+  # 1~5분 주기의 "거의 실시간" 폴더 감시를 위한 포그라운드 서비스 패키지.
+  # WorkManager(최소 15분 + 도즈로 밀림) 로는 빠른 감지가 불가능하므로,
+  # 상시 알림이 떠 있는 포그라운드 서비스에서 짧은 주기로 폴더를 스캔한다.
+  flutter_foreground_task: ^8.17.0
   # 신규 엑셀이 감지됐을 때 로컬 알림을 보내기 위한 패키지.
   flutter_local_notifications: ^17.2.3
 
