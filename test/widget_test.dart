@@ -13,7 +13,7 @@ import 'package:pharm_tally/main.dart';
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const PharmTallyApp());
+    await tester.pumpWidget(PharmTallyApp(initialDate: DateTime(2026, 1, 1)));
 
     // 앱이 최소 1프레임 렌더링되는지만 확인
     expect(find.byType(MaterialApp), findsOneWidget);

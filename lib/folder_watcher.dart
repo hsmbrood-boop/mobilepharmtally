@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -21,6 +22,10 @@ const String _kLastScanMillisKey = 'pharm_tally.folderWatch.lastScanMillis';
 /// 이미 알림을 보낸 파일 이름 목록. 같은 파일에 대해 동기화가 여러 번 일어나도
 /// 알림은 한 번만 가도록 중복을 방지. 너무 커지지 않게 최근 500개만 유지.
 const String _kSeenFilesKey = 'pharm_tally.folderWatch.seenFiles';
+
+/// 배터리 최적화 제외를 이미 한 번 요청했는지 여부. 거부당해도 매번
+/// 다시 묻지 않도록 한 번만 자동으로 띄운다.
+const String _kBatteryOptAskedKey = 'pharm_tally.folderWatch.batteryOptAsked';
 
 /// WorkManager 콜백. **반드시 top-level / static 이어야 하며,
 /// `@pragma('vm:entry-point')` 가 붙어 있어야 release 모드에서 살아남는다.**
@@ -176,5 +181,30 @@ Future<void> initializeFolderWatcher() async {
     );
   } catch (e, st) {
     debugPrint('[folder_watch] initialize failed: $e\n$st');
+  }
+}
+
+/// 배터리 최적화(도즈)에서 이 앱을 제외해 달라고 사용자에게 한 번 요청한다.
+///
+/// 도즈가 깊어지면 15분 주기 백그라운드 스캔이 밤에 1~2시간씩 밀린다.
+/// 최적화에서 제외되면 주기에 훨씬 가깝게(거의 15분마다) 실행된다.
+/// (주기 자체를 15분보다 짧게 만들지는 못함 — 그건 WorkManager 의 OS 하한.)
+///
+/// 이미 제외돼 있거나, 이전에 이미 한 번 물어봤으면 다시 묻지 않는다.
+Future<void> requestIgnoreBatteryOptimizations() async {
+  if (kIsWeb || !Platform.isAndroid) return;
+  try {
+    // 이미 제외돼 있으면 아무것도 안 함.
+    if (await Permission.ignoreBatteryOptimizations.isGranted) return;
+
+    // 한 번 물어본 적 있으면(거부 포함) 다시 띄우지 않는다.
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_kBatteryOptAskedKey) ?? false) return;
+    await prefs.setBool(_kBatteryOptAskedKey, true);
+
+    // 시스템 다이얼로그("배터리 최적화를 사용 안 함으로 설정할까요?") 표시.
+    await Permission.ignoreBatteryOptimizations.request();
+  } catch (e, st) {
+    debugPrint('[folder_watch] battery opt request failed: $e\n$st');
   }
 }

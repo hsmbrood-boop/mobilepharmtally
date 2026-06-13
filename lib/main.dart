@@ -149,6 +149,10 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
       // 본격적인 폼 로드 전에 짧게 처리.
       await PharmTallyNotifications.requestRuntimePermissions();
 
+      // 배터리 최적화 제외 요청 — 도즈로 밤에 폴더 감시 알림이 1~2시간씩
+      // 밀리는 것을 줄인다. 한 번만 물어보고, 거부돼도 무해.
+      await requestIgnoreBatteryOptimizations();
+
       // 알림 탭으로 시작된 경우: 미리 채워둔 payload 를 소비해서 그 날짜로 이동.
       _handlePendingTargetDate();
 

@@ -15,6 +15,10 @@
     <!-- 폰을 재부팅해도 폴더 감시 작업이 다시 등록되도록 (WorkManager
          내부 BootReceiver 가 이 권한을 사용). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 배터리 최적화(도즈) 때문에 15분 주기 폴더 감시가 밤에 1~2시간씩
+         밀리는 것을 줄이기 위해, 사용자에게 "최적화 제외"를 요청한다.
+         (Google Play 는 이 권한 사용을 제한하지만 ONE Store 배포에는 무방.) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:label="PharmTally"
