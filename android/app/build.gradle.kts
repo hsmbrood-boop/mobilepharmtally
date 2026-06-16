@@ -38,7 +38,9 @@ android {
         applicationId = "com.orcholdings.pharmtally"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // SynDrive 통합 코드가 NotificationChannel(API 26) 등을 가드 없이 쓰므로
+        // minSdk 26(Android 8.0) 이상 필요. (SynDrive 도 원래 26, 단말은 Android 16.)
+        minSdk = maxOf(flutter.minSdkVersion, 26)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -76,4 +78,16 @@ flutter {
 dependencies {
     // core library desugaring 런타임. `compileOptions` 의 옵션과 짝.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // ── SynDrive(OneDrive 단방향 동기화) 통합에 필요한 의존성 ──
+    // SyndriveActivity 설정 화면(AppCompat + Material), SAF(documentfile),
+    // Graph API 호출(okhttp), 코루틴, WorkManager 주기 동기화.
+    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
 }

@@ -121,6 +121,23 @@ class SettlementStore extends ChangeNotifier {
     }
   }
 
+  /// SynDrive 설정 화면에서 "폰 폴더 선택"으로 폴더가 바뀐 경우, 네이티브가
+  /// SharedPreferences 에 직접 써넣은 새 경로를 디스크에서 다시 읽어 반영한다.
+  /// (앱이 SynDrive 화면에서 돌아올 때 호출.)
+  Future<void> reloadFolderPath() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload(); // 다른 컴포넌트(네이티브)가 쓴 값을 가져오기 위해.
+      final p = prefs.getString(_kFolderPathKey);
+      if (p != null && p.isNotEmpty && p != savedFolderPath) {
+        savedFolderPath = p;
+        notifyListeners();
+      }
+    } catch (_) {
+      // 무시.
+    }
+  }
+
   Future<void> _persist() async {
     try {
       final prefs = await SharedPreferences.getInstance();

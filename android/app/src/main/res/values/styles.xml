@@ -19,4 +19,7 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+    <!-- SynDrive 설정 화면(SyndriveActivity)용 Material3 테마. AppCompatActivity 가
+         요구하는 AppCompat 계열 테마. -->
+    <style name="Theme.SynDrive" parent="Theme.Material3.DayNight.NoActionBar" />
 </resources>

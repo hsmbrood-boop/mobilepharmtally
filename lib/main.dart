@@ -11,12 +11,11 @@ import 'package:simple_gesture_detector/simple_gesture_detector.dart';
 
 import 'brand_splash.dart';
 import 'cash_settlement_screen.dart';
-import 'folder_watch_service.dart';
-import 'folder_watcher.dart';
 import 'holiday_calendar_picker.dart';
 import 'korean_holidays.dart';
 import 'notifications.dart';
 import 'pharm_tally_excel.dart';
+import 'syndrive_bridge.dart';
 
 import 'settlement_store.dart';
 import 'statistics_screen.dart';
@@ -29,31 +28,24 @@ Future<void> main() async {
   // 한 번만 바뀐다. (브랜딩 글자는 종료 시에 한 번만 표시.)
   await SettlementStore.instance.load();
 
-  // 로컬 알림 초기화 (알림 탭 → payload(YYYY-MM-DD) 가 pendingTargetDate 로).
+  // 로컬 알림 초기화 (알림 탭 → 날짜(YYYY-MM-DD) 가 pendingTargetDate 로).
   // SalesScreen 이 이 값을 watch 해서 해당 날짜로 자동 이동한다.
   await PharmTallyNotifications.initialize();
-  // 콜드 스타트가 알림 탭으로 시작된 경우, launch payload 를 미리 채워둔다.
-  final launchPayload = await PharmTallyNotifications.consumeLaunchPayload();
-  if (launchPayload != null && launchPayload.isNotEmpty) {
-    PharmTallyNotifications.pendingTargetDate.value = launchPayload;
+
+  // 임베드된 SynDrive(네이티브) 와의 다리 연결. 새 매출 알림 탭 → 날짜 수신.
+  SyndriveBridge.initialize();
+  // 콜드 스타트가 새 매출 알림 탭으로 시작된 경우, 그 날짜를 미리 채워둔다.
+  final launchDate = await SyndriveBridge.getInitialTargetDate();
+  if (launchDate != null && launchDate.isNotEmpty) {
+    PharmTallyNotifications.pendingTargetDate.value = launchDate;
   }
-
-  // 안드로이드 백그라운드 폴더 감시 작업 등록 (iOS 는 no-op).
-  // 권한이 아직 없거나 폴더가 비어있어도 안전 — 콜백 안에서 가드함.
-  // WorkManager(15분 주기) 는 포그라운드 서비스가 도즈/시스템에 의해 종료됐을
-  // 때를 대비한 백스톱으로 함께 둔다. 중복 알림은 seen-files 로 방지됨.
-  await initializeFolderWatcher();
-
-  // 포그라운드 서비스(1분 주기, "거의 실시간") 옵션 초기화. 실제 시작은
-  // 첫 화면 진입 후 권한 요청과 함께 한다.
-  initFolderWatchService();
 
   // 알림 탭으로 시작된 경우 그 날짜, 아니면 오늘 파일이 있으면 오늘,
   // 없으면 가장 최근 과거 파일 날짜를 초기 날짜로 사용.
   // main() 에서 미리 결정해서 첫 프레임부터 올바른 날짜가 표시되도록 함.
   DateTime initialDate = DateTime.now();
-  if (launchPayload != null && launchPayload.isNotEmpty) {
-    final parsed = DateTime.tryParse(launchPayload);
+  if (launchDate != null && launchDate.isNotEmpty) {
+    final parsed = DateTime.tryParse(launchDate);
     if (parsed != null) initialDate = DateTime(parsed.year, parsed.month, parsed.day);
   }
 
@@ -156,10 +148,9 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
       // 본격적인 폼 로드 전에 짧게 처리.
       await PharmTallyNotifications.requestRuntimePermissions();
 
-      // "거의 실시간"(1분 주기) 포그라운드 폴더 감시 서비스 시작.
-      // 내부에서 알림 권한 + 배터리 최적화 제외를 함께 요청한다. 이미 돌고
-      // 있으면 no-op. (상시 "폴더 감시 중" 알림이 하나 떠 있게 된다.)
-      await startFolderWatchService();
+      // SynDrive(원드라이브 동기화) 가 이미 설정돼 있으면 고속 동기화 재개.
+      // 재부팅/앱 재시작 후 폴더 버튼을 다시 누르지 않아도 동기화가 이어진다.
+      await SyndriveBridge.resumeFastSyncIfConfigured();
 
       // 알림 탭으로 시작된 경우: 미리 채워둔 payload 를 소비해서 그 날짜로 이동.
       _handlePendingTargetDate();
@@ -203,9 +194,12 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        _loadForDate(selectedDate, showFeedback: false);
+        // SynDrive 설정 화면에서 폴더를 바꿨을 수 있으니 경로를 다시 읽고 로드.
+        await SettlementStore.instance.reloadFolderPath();
+        if (!mounted) return;
+        await _loadForDate(selectedDate, showFeedback: false);
       });
     }
   }
@@ -662,6 +656,14 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
               '웹에서는 폴더 선택을 사용할 수 없습니다. Windows 데스크톱(또는 안드로이드)에서 실행해 주세요.'),
         ),
       );
+      return;
+    }
+
+    // 안드로이드: 폴더 버튼 → SynDrive(원드라이브 동기화) 설정 화면.
+    // 거기서 "폰 폴더 선택"으로 고른 폴더가 PharmTally 읽기 경로로 자동 연결되고,
+    // 화면에서 돌아오면 didChangeAppLifecycleState 가 새 경로로 다시 로드한다.
+    if (Platform.isAndroid) {
+      await SyndriveBridge.openSettings();
       return;
     }
 

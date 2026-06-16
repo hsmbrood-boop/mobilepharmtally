@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- SynDrive 통합: OneDrive(Microsoft Graph) 다운로드를 위한 인터넷 접근. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- 공유 저장소(예: /storage/emulated/0/OneSyncFiles) 의 임의 폴더에
          엑셀을 직접 읽고/쓰기 위해 필요한 권한들.
          - Android 10 이하: READ/WRITE_EXTERNAL_STORAGE + requestLegacyExternalStorage
@@ -59,6 +62,20 @@
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!-- SynDrive 통합: 설정 화면. 폴더 버튼으로만 열리므로 LAUNCHER 인텐트
+             필터를 두지 않는다(런처 아이콘은 PharmTally 하나만). -->
+        <activity
+            android:name="com.syn.syndrive.SyndriveActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.SynDrive" />
+
+        <!-- SynDrive 통합: 고속(1~10분) 동기화 상시 실행 서비스. -->
+        <service
+            android:name="com.syn.syndrive.FastSyncService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
