@@ -74,26 +74,20 @@
                 android:inputType="textUri"
                 android:importantForAutofill="no" />
 
-            <LinearLayout
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:layout_marginTop="8dp"
+                android:textSize="13sp"
+                android:text="받을 폰 폴더 이름. 내부 저장공간 기준이며, 없으면 자동으로 만듭니다. (예: OneSyncFiles)" />
 
-                <Button
-                    android:id="@+id/btnPickFolder"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="폰 폴더 선택" />
-
-                <TextView
-                    android:id="@+id/tvLocalFolder"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:text="선택 안 됨" />
-            </LinearLayout>
+            <EditText
+                android:id="@+id/etLocalPath"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="폰 저장 폴더 (예: OneSyncFiles)"
+                android:inputType="text"
+                android:importantForAutofill="no" />
 
             <TextView
                 android:layout_width="wrap_content"

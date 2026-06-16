@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
-import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
@@ -52,8 +51,7 @@ class SyndriveActivity : AppCompatActivity() {
     private lateinit var btnLogin: Button
     private lateinit var tvAuthStatus: TextView
     private lateinit var etRemotePath: EditText
-    private lateinit var btnPickFolder: Button
-    private lateinit var tvLocalFolder: TextView
+    private lateinit var etLocalPath: EditText
     private lateinit var spInterval: Spinner
     private lateinit var swDelete: SwitchMaterial
     private lateinit var btnSyncNow: Button
@@ -67,20 +65,6 @@ class SyndriveActivity : AppCompatActivity() {
 
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
-    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-            prefs.treeUri = uri.toString()
-            prefs.deltaLink = null // 대상 폴더가 바뀌었으니 전체 재열거
-            // PharmTally 가 엑셀을 읽을 실제 경로를 함께 저장 → 한 번 설정으로 끝.
-            bridgeFolderToPharmTally(uri)
-            updateUi()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,8 +92,7 @@ class SyndriveActivity : AppCompatActivity() {
         btnLogin = findViewById(R.id.btnLogin)
         tvAuthStatus = findViewById(R.id.tvAuthStatus)
         etRemotePath = findViewById(R.id.etRemotePath)
-        btnPickFolder = findViewById(R.id.btnPickFolder)
-        tvLocalFolder = findViewById(R.id.tvLocalFolder)
+        etLocalPath = findViewById(R.id.etLocalPath)
         spInterval = findViewById(R.id.spInterval)
         swDelete = findViewById(R.id.swDelete)
         btnSyncNow = findViewById(R.id.btnSyncNow)
@@ -119,6 +102,8 @@ class SyndriveActivity : AppCompatActivity() {
         scrollLog = findViewById(R.id.scrollLog)
 
         etRemotePath.setText(prefs.remotePath)
+        // 저장된 폴더가 있으면 그 이름을, 없으면 기본값 OneSyncFiles 를 보여준다.
+        etLocalPath.setText(prefs.localDirPath?.let { friendlyLocalName(it) } ?: "OneSyncFiles")
         swDelete.isChecked = prefs.deleteRemoved
 
         spInterval.adapter = ArrayAdapter(
@@ -142,7 +127,6 @@ class SyndriveActivity : AppCompatActivity() {
         swDelete.setOnCheckedChangeListener { _, checked -> prefs.deleteRemoved = checked }
 
         btnLogin.setOnClickListener { startLogin() }
-        btnPickFolder.setOnClickListener { pickFolder.launch(null) }
         btnSyncNow.setOnClickListener { runSyncNow() }
         btnBattery.setOnClickListener { requestBatteryException() }
 
@@ -193,6 +177,37 @@ class SyndriveActivity : AppCompatActivity() {
             prefs.remotePath = newPath
             prefs.deltaLink = null // 원격 폴더가 바뀌었으니 전체 재열거
         }
+
+        // 폰 저장 폴더(이름 또는 경로) → 실제 경로로 변환해 저장 + PharmTally 연동.
+        val localInput = etLocalPath.text.toString().trim()
+        if (localInput.isNotEmpty()) {
+            val resolved = resolveLocalPath(localInput)
+            if (resolved != prefs.localDirPath) {
+                prefs.localDirPath = resolved
+                prefs.deltaLink = null // 대상 폴더가 바뀌었으니 전체 재열거
+                bridgeFolderToPharmTally(resolved)
+            }
+        }
+    }
+
+    /**
+     * 입력값을 실제 경로로 변환. "/"로 시작하면 절대경로 그대로,
+     * 아니면 내부 저장공간 기준 상대 폴더로 본다. (예: "OneSyncFiles"
+     * → /storage/emulated/0/OneSyncFiles)
+     */
+    private fun resolveLocalPath(input: String): String {
+        val t = input.trim()
+        return if (t.startsWith("/")) {
+            t.trimEnd('/')
+        } else {
+            "${Environment.getExternalStorageDirectory().absolutePath}/${t.trim('/')}"
+        }
+    }
+
+    /** 저장된 전체 경로에서 보여줄 짧은 이름(내부 저장공간 기준 상대 경로). */
+    private fun friendlyLocalName(fullPath: String): String {
+        val root = Environment.getExternalStorageDirectory().absolutePath
+        return if (fullPath.startsWith(root)) fullPath.removePrefix(root).trim('/') else fullPath
     }
 
     /** 디바이스 코드 로그인: 코드를 띄우고 브라우저를 연 뒤 승인될 때까지 폴링 */
@@ -234,6 +249,11 @@ class SyndriveActivity : AppCompatActivity() {
 
     private fun runSyncNow() {
         saveTextSettings()
+        // 경로 직접 쓰기에는 "모든 파일 접근" 권한이 필요.
+        if (!ensureAllFilesAccess()) {
+            appendLog("'모든 파일 접근' 권한을 켠 뒤 다시 시도하세요.")
+            return
+        }
         btnSyncNow.isEnabled = false
         appendLog("── ${now()} 수동 동기화 시작 ──")
         lifecycleScope.launch {
@@ -270,12 +290,8 @@ class SyndriveActivity : AppCompatActivity() {
 
     private fun updateUi() {
         tvAuthStatus.text = if (auth.isSignedIn) "로그인됨 ✓" else "로그인 필요"
-        tvLocalFolder.text = prefs.treeUri?.let { friendlyTreePath(it) } ?: "선택 안 됨"
         tvLastSync.text = "마지막 동기화: ${prefs.lastSyncInfo}"
     }
-
-    private fun friendlyTreePath(uriStr: String): String =
-        Uri.decode(uriStr).substringAfterLast(':').ifEmpty { uriStr }
 
     private fun appendLog(msg: String) {
         tvLog.append("$msg\n")
@@ -287,17 +303,11 @@ class SyndriveActivity : AppCompatActivity() {
     // ── PharmTally 연동 ────────────────────────────────────────────────────
 
     /**
-     * SAF tree URI 의 실제 파일 경로를 계산해 PharmTally(Flutter) 가 읽는
-     * SharedPreferences 키에 써넣는다. PharmTally 는 dart:io + 모든 파일 접근
-     * 권한으로 이 경로를 직접 읽으므로, SynDrive 가 내려받는 폴더와 PharmTally 가
-     * 읽는 폴더가 자동으로 같아진다.
-     *
-     * 변환은 기본(primary) 저장소와 SD카드의 일반적인 경우를 지원한다. 변환이
-     * 불가능한 특수 제공자면 조용히 건너뛴다(이 경우 사용자가 PharmTally 데스크톱
-     * 등에서 폴더를 직접 지정).
+     * 동기화 받을 폴더 경로를 PharmTally(Flutter) 가 읽는 SharedPreferences 키에
+     * 써넣는다. PharmTally 는 dart:io + "모든 파일 접근" 권한으로 이 경로를 직접
+     * 읽으므로, SynDrive 가 내려받는 폴더 = PharmTally 가 읽는 폴더가 된다.
      */
-    private fun bridgeFolderToPharmTally(treeUri: Uri) {
-        val path = treeUriToRealPath(treeUri) ?: return
+    private fun bridgeFolderToPharmTally(path: String) {
         // Flutter shared_preferences 는 "FlutterSharedPreferences" 파일에
         // "flutter." 접두어를 붙여 저장한다.
         getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
@@ -307,21 +317,26 @@ class SyndriveActivity : AppCompatActivity() {
         appendLog("PharmTally 읽기 폴더로 연결됨: $path")
     }
 
-    private fun treeUriToRealPath(treeUri: Uri): String? {
-        return try {
-            val docId = DocumentsContract.getTreeDocumentId(treeUri)
-            val parts = docId.split(":", limit = 2)
-            if (parts.size < 2) return null
-            val type = parts[0]
-            val rel = parts[1]
-            if (type.equals("primary", ignoreCase = true)) {
-                "${Environment.getExternalStorageDirectory().absolutePath}/$rel".trimEnd('/')
-            } else {
-                // SD카드 등 보조 저장소: 대부분의 기기에서 /storage/<volume>/<rel>
-                "/storage/$type/$rel".trimEnd('/')
+    /**
+     * 파일을 경로로 직접 쓰려면 "모든 파일 접근(MANAGE_EXTERNAL_STORAGE)" 권한이
+     * 필요하다. 없으면 설정 화면을 열어 요청하고 false 를 돌려준다.
+     */
+    private fun ensureAllFilesAccess(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
+                } catch (e: Exception) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                }
+                return false
             }
-        } catch (e: Exception) {
-            null
         }
+        return true
     }
 }

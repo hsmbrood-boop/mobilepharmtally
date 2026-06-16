@@ -2,8 +2,6 @@ package com.syn.syndrive
 
 import android.content.Context
 import android.net.Uri
-import android.webkit.MimeTypeMap
-import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -15,12 +13,14 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 원드라이브 → 폰 단방향 동기화 엔진.
  * Graph delta API로 변경분만 받고, 파일은 병렬(6개 동시)로 다운로드한다.
- * SAF의 findFile()이 호출마다 전체 자식 조회를 하므로 디렉터리 목록을 캐시한다.
+ *
+ * 저장은 SAF 가 아니라 일반 파일 경로(java.io.File)로 직접 쓴다. 앱이 "모든 파일
+ * 접근(MANAGE_EXTERNAL_STORAGE)" 권한을 갖고 있으므로 가능하며, 삼성 등에서 SAF
+ * 폴더 선택이 막히는 문제를 피한다. PharmTally 도 같은 경로를 dart:io 로 읽는다.
  */
 class SyncEngine(
     private val context: Context,
@@ -42,10 +42,13 @@ class SyncEngine(
     suspend fun sync(log: (String) -> Unit): Summary = withContext(Dispatchers.IO) {
         val remotePath = prefs.remotePath.trim().trim('/')
         if (remotePath.isEmpty()) throw IOException("원드라이브 폴더 경로를 입력하세요")
-        val treeUriStr = prefs.treeUri ?: throw IOException("폰 저장 폴더를 먼저 선택하세요")
-        val localRoot = DocumentFile.fromTreeUri(context, Uri.parse(treeUriStr))
-            ?: throw IOException("폰 폴더에 접근할 수 없습니다 (폴더를 다시 선택하세요)")
-        if (!localRoot.canWrite()) throw IOException("폰 폴더에 쓰기 권한이 없습니다 (폴더를 다시 선택하세요)")
+        val localPath = prefs.localDirPath?.trim()
+        if (localPath.isNullOrEmpty()) throw IOException("폰 저장 폴더를 먼저 지정하세요")
+        val localRoot = File(localPath)
+        if (!localRoot.exists() && !localRoot.mkdirs()) {
+            throw IOException("폴더를 만들 수 없습니다: $localPath\n(설정에서 '모든 파일 접근'을 켰는지 확인하세요)")
+        }
+        if (!localRoot.isDirectory) throw IOException("폴더가 아닙니다: $localPath")
 
         val token = auth.getValidAccessToken()
         val fileMap = loadFileMap()
@@ -69,13 +72,11 @@ class SyncEngine(
             }
         }
 
-        val cache = DirCache(localRoot)
-
-        // 2) 폴더 생성 (순차 — 부모가 자식보다 먼저 오도록 delta가 보장하지만, ensureDir가 중간 경로도 만든다)
+        // 2) 폴더 생성
         for (item in items) {
             if (item.has("deleted") || !item.has("folder")) continue
             val rel = relativePath(item, remotePath, item.optString("name")) ?: continue
-            cache.ensureDir(rel)
+            File(localRoot, rel).mkdirs()
             fileMap.put(item.getString("id"), rel)
         }
 
@@ -89,7 +90,7 @@ class SyncEngine(
                         val name = item.optString("name")
                         val rel = relativePath(item, remotePath, name) ?: return@withPermit
                         try {
-                            val done = downloadFile(item, token, cache, rel, isInitial)
+                            val done = downloadFile(item, token, localRoot, rel, isInitial)
                             synchronized(summary) {
                                 if (done) summary.downloaded++ else summary.skipped++
                                 // 새로 내려받은 엑셀만 PharmTally 알림 대상으로 모은다
@@ -114,9 +115,12 @@ class SyncEngine(
             if (!item.has("deleted")) continue
             val id = item.getString("id")
             val rel = fileMap.optString(id).ifEmpty { null }
-            if (rel != null && prefs.deleteRemoved && deleteLocal(cache, rel)) {
-                summary.deleted++
-                log("삭제: $rel")
+            if (rel != null && prefs.deleteRemoved) {
+                val f = File(localRoot, rel)
+                if (f.exists() && f.delete()) {
+                    summary.deleted++
+                    log("삭제: $rel")
+                }
             }
             fileMap.remove(id)
         }
@@ -146,19 +150,19 @@ class SyncEngine(
     private fun downloadFile(
         item: JSONObject,
         token: String,
-        cache: DirCache,
+        localRoot: File,
         rel: String,
         isInitial: Boolean,
     ): Boolean {
-        val name = item.getString("name")
-        val dirRel = rel.substringBeforeLast('/', "")
-        val existing = cache.child(dirRel, name)
+        val target = File(localRoot, rel)
 
-        // 첫 전체 동기화 때만: 같은 크기의 파일이 이미 있으면 그대로 둔다 (OneSync로 받아둔 파일 재다운로드 방지)
-        if (isInitial && existing != null) {
+        // 첫 전체 동기화 때만: 같은 크기의 파일이 이미 있으면 그대로 둔다 (재다운로드 방지)
+        if (isInitial && target.exists()) {
             val size = item.optLong("size", -1L)
-            if (size >= 0 && existing.length() == size) return false
+            if (size >= 0 && target.length() == size) return false
         }
+
+        target.parentFile?.mkdirs()
 
         val downloadUrl = item.optString("@microsoft.graph.downloadUrl")
         val req = if (downloadUrl.isNotEmpty()) {
@@ -172,24 +176,20 @@ class SyncEngine(
 
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
-            val target = existing ?: cache.createFile(dirRel, name)
-            // DocumentsProvider가 확장자를 덧붙여 이름을 바꿨으면 원래 이름으로 되돌린다
-            if (target.name != name) target.renameTo(name)
-            context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
-                resp.body?.byteStream()?.copyTo(out) ?: throw IOException("응답 본문 없음")
-            } ?: throw IOException("파일 쓰기 스트림을 열 수 없음")
-            cache.put(dirRel, name, target)
+            val body = resp.body ?: throw IOException("응답 본문 없음")
+            // 임시 파일에 받은 뒤 교체 — 중간에 실패해도 깨진 파일이 남지 않게.
+            val tmp = File(target.parentFile, ".${target.name}.part")
+            body.byteStream().use { input ->
+                tmp.outputStream().use { out -> input.copyTo(out) }
+            }
+            if (target.exists()) target.delete()
+            if (!tmp.renameTo(target)) {
+                // rename 실패 시(드묾) 직접 복사로 폴백
+                tmp.copyTo(target, overwrite = true)
+                tmp.delete()
+            }
         }
         return true
-    }
-
-    private fun deleteLocal(cache: DirCache, rel: String): Boolean {
-        val dirRel = rel.substringBeforeLast('/', "")
-        val name = rel.substringAfterLast('/')
-        val f = cache.childIfExists(dirRel, name) ?: return false
-        val ok = f.delete()
-        if (ok) cache.remove(dirRel, name)
-        return ok
     }
 
     private fun graphGet(url: String, token: String): JSONObject {
@@ -211,73 +211,6 @@ class SyncEngine(
 
     private fun encodePath(path: String): String =
         path.split('/').joinToString("/") { Uri.encode(it) }
-
-    private fun guessMime(name: String): String {
-        val ext = name.substringAfterLast('.', "").lowercase()
-        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
-    }
-
-    // ── SAF 디렉터리/목록 캐시 ───────────────────────────────────────────────
-
-    private inner class DirCache(root: DocumentFile) {
-        private val dirs = ConcurrentHashMap<String, DocumentFile>().apply { put("", root) }
-        private val listings = ConcurrentHashMap<String, ConcurrentHashMap<String, DocumentFile>>()
-
-        fun ensureDir(relDir: String): DocumentFile {
-            val norm = relDir.trim('/')
-            dirs[norm]?.let { return it }
-            synchronized(this) {
-                dirs[norm]?.let { return it }
-                val parentRel = norm.substringBeforeLast('/', "")
-                val name = norm.substringAfterLast('/')
-                val parent = ensureDir(parentRel)
-                val found = listing(parentRel)[name]?.takeIf { it.isDirectory }
-                val dir = found ?: parent.createDirectory(name)?.also { listing(parentRel)[name] = it }
-                    ?: throw IOException("폴더 생성 실패: $name")
-                dirs[norm] = dir
-                return dir
-            }
-        }
-
-        fun child(relDir: String, name: String): DocumentFile? = listing(relDir.trim('/'))[name]
-
-        /** 중간 폴더를 만들지 않고 조회만 (삭제 처리용) */
-        fun childIfExists(relDir: String, name: String): DocumentFile? {
-            val norm = relDir.trim('/')
-            if (norm.isNotEmpty() && !dirExists(norm)) return null
-            return listing(norm)[name]
-        }
-
-        fun createFile(relDir: String, name: String): DocumentFile =
-            ensureDir(relDir).createFile(guessMime(name), name)
-                ?: throw IOException("파일 생성 실패: $name")
-
-        fun put(relDir: String, name: String, doc: DocumentFile) {
-            listing(relDir.trim('/'))[name] = doc
-        }
-
-        fun remove(relDir: String, name: String) {
-            listings[relDir.trim('/')]?.remove(name)
-        }
-
-        private fun dirExists(norm: String): Boolean {
-            dirs[norm]?.let { return true }
-            val parentRel = norm.substringBeforeLast('/', "")
-            if (parentRel.isNotEmpty() && !dirExists(parentRel)) return false
-            val name = norm.substringAfterLast('/')
-            val d = listing(parentRel)[name]?.takeIf { it.isDirectory } ?: return false
-            dirs[norm] = d
-            return true
-        }
-
-        private fun listing(relDir: String): ConcurrentHashMap<String, DocumentFile> {
-            listings[relDir]?.let { return it }
-            val dir = ensureDir(relDir)
-            val m = ConcurrentHashMap<String, DocumentFile>()
-            for (f in dir.listFiles()) f.name?.let { n -> m[n] = f }
-            return listings.putIfAbsent(relDir, m) ?: m
-        }
-    }
 
     // ── 파일 id → 상대경로 매핑 (삭제 동기화용) ──────────────────────────────
 

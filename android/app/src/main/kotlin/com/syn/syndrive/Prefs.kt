@@ -36,6 +36,15 @@ class Prefs(context: Context) {
         get() = sp.getString("tree_uri", null)
         set(v) = sp.edit().putString("tree_uri", v).apply()
 
+    /**
+     * 폰 로컬 저장 폴더의 실제 경로(예: /storage/emulated/0/OneSyncFiles).
+     * SAF tree URI 대신 "모든 파일 접근" 권한으로 직접 파일을 쓰기 위해 사용한다.
+     * (삼성 등에서 SAF 폴더 선택이 막히는 문제를 피하려고 경로 방식으로 전환.)
+     */
+    var localDirPath: String?
+        get() = sp.getString("local_dir_path", null)
+        set(v) = sp.edit().putString("local_dir_path", v).apply()
+
     /** Graph delta API의 deltaLink — null이면 다음 동기화 때 전체 목록부터 다시 받음 */
     var deltaLink: String?
         get() = sp.getString("delta_link", null)
