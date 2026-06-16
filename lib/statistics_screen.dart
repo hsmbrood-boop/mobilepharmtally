@@ -111,11 +111,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     if (!kIsWeb) {
       try {
         if (Platform.isAndroid || Platform.isIOS) {
+          // 통계 화면을 나가면 메인은 다시 세로로 고정.
           SystemChrome.setPreferredOrientations(const [
             DeviceOrientation.portraitUp,
-            DeviceOrientation.portraitDown,
-            DeviceOrientation.landscapeLeft,
-            DeviceOrientation.landscapeRight,
           ]);
         }
       } catch (_) {}
