@@ -39,6 +39,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
+            android:screenOrientation="portrait"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -69,6 +70,7 @@
             android:name="com.syn.syndrive.SyndriveActivity"
             android:exported="false"
             android:launchMode="singleTop"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.SynDrive" />
 
         <!-- SynDrive 통합: 고속(1~10분) 동기화 상시 실행 서비스. -->

@@ -23,6 +23,10 @@ import 'widgets/calc_search_icon.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 폰 자동회전이 켜져 있어도 앱은 항상 세로로 고정 (가로 전환 방지).
+  await SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+  ]);
   // 시스템 스플래시 → 매출/정산 화면 으로 곧바로 가도록 store 로드는
   // runApp 이전에 끝낸다. 시작 시 추가 브랜딩 화면을 띄우지 않아 화면이
   // 한 번만 바뀐다. (브랜딩 글자는 종료 시에 한 번만 표시.)
@@ -151,6 +155,17 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
       // SynDrive(원드라이브 동기화) 가 이미 설정돼 있으면 고속 동기화 재개.
       // 재부팅/앱 재시작 후 폴더 버튼을 다시 누르지 않아도 동기화가 이어진다.
       await SyndriveBridge.resumeFastSyncIfConfigured();
+
+      // 이미 폴더가 지정돼 있는데 "모든 파일 접근" 권한이 없으면, dart:io 로
+      // 폴더를 못 읽어 자료가 안 보인다. 시작 시 한 번 권한을 요청해 둔다.
+      if (!kIsWeb && Platform.isAndroid) {
+        final folder = SettlementStore.instance.savedFolderPath.trim();
+        if (folder.isNotEmpty &&
+            !await Permission.manageExternalStorage.status.isGranted) {
+          await _ensureStoragePermission();
+          if (mounted) await _loadForDate(selectedDate, showFeedback: false);
+        }
+      }
 
       // 알림 탭으로 시작된 경우: 미리 채워둔 payload 를 소비해서 그 날짜로 이동.
       _handlePendingTargetDate();
@@ -662,7 +677,13 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
     // 안드로이드: 폴더 버튼 → SynDrive(원드라이브 동기화) 설정 화면.
     // 거기서 "폰 폴더 선택"으로 고른 폴더가 PharmTally 읽기 경로로 자동 연결되고,
     // 화면에서 돌아오면 didChangeAppLifecycleState 가 새 경로로 다시 로드한다.
+    //
+    // SynDrive 는 SAF 로 파일을 쓰지만, PharmTally 는 dart:io 로 그 폴더를
+    // 직접 읽으므로 "모든 파일 접근" 권한이 반드시 필요하다. 폴더 버튼이
+    // SynDrive 로 바로 가면서 예전의 권한 요청을 건너뛰면 동기화는 되는데
+    // PharmTally 에 자료가 안 보이는 문제가 생기므로, 여기서 먼저 요청한다.
     if (Platform.isAndroid) {
+      await _ensureStoragePermission();
       await SyndriveBridge.openSettings();
       return;
     }
