@@ -68,7 +68,7 @@
         <activity
             android:name="com.syn.syndrive.SyndriveActivity"
             android:exported="false"
-            android:launchMode="singleTask"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.SynDrive" />
 
         <!-- SynDrive 통합: 고속(1~10분) 동기화 상시 실행 서비스. -->

@@ -6,6 +6,13 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <!-- 좌측 상단 뒤로가기 화살표 → 누르면 PharmTally 로 복귀(finish). -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:layout_marginBottom="4dp" />
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"

@@ -26,6 +26,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.orcholdings.pharmtally.R
 import kotlinx.coroutines.launch
@@ -84,6 +85,14 @@ class SyndriveActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_syndrive)
+
+        // 좌측 상단 뒤로가기 화살표 → PharmTally 로 복귀.
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            title = "동기화 설정"
+        }
 
         // Android 15 edge-to-edge: 시스템 바 영역만큼 패딩 추가 (기본 16dp 유지)
         val basePad = (16 * resources.displayMetrics.density).toInt()
@@ -144,6 +153,12 @@ class SyndriveActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateUi()
+    }
+
+    /** 좌측 상단 뒤로가기 화살표 → PharmTally 로 복귀. */
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
     }
 
     /** 주기에 맞는 실행 방식 선택: 15분 미만 = 상시 실행 서비스, 이상 = WorkManager */
