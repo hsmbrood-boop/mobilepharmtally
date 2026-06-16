@@ -1,7 +1,12 @@
 package com.orcholdings.pharmtally
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
+import androidx.core.content.PackageManagerCompat
+import androidx.core.content.UnusedAppRestrictionsConstants
 import com.syn.syndrive.NewFileNotifier
 import com.syn.syndrive.SyncScheduler
 import com.syn.syndrive.SyndriveActivity
@@ -32,9 +37,11 @@ class MainActivity : FlutterActivity() {
                         startActivity(Intent(this, SyndriveActivity::class.java))
                         result.success(null)
                     }
-                    // 앱 시작 시: SynDrive 가 설정돼 있으면 고속 동기화 재개
+                    // 앱 시작 시: SynDrive 가 설정돼 있으면 고속 동기화 재개 +
+                    // 앱 휴면(미사용 시 자동 권한 삭제) 해제 안내.
                     "resumeFastSyncIfConfigured" -> {
                         SyncScheduler.apply(this)
+                        promptDisableHibernationIfNeeded()
                         result.success(null)
                     }
                     // 콜드스타트가 새 매출 알림 탭으로 시작된 경우의 날짜
@@ -45,6 +52,49 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        }
+    }
+
+    /**
+     * 앱을 한동안 안 열면 안드로이드(API 30+)가 "미사용 앱"으로 보고 권한을
+     * 자동 삭제 + 휴면시켜 백그라운드 동기화가 끊긴다. 이 앱은 백그라운드로만
+     * 도는 일이 많으므로, 제한이 켜져 있으면 해제 설정 화면을 한 번 띄워 안내한다.
+     * (사용자가 처리하면 상태가 DISABLED 가 되어 다시 뜨지 않는다. 설치당 1회.)
+     */
+    private fun promptDisableHibernationIfNeeded() {
+        if (Build.VERSION.SDK_INT < 30) return
+        val sp = getSharedPreferences("pharmtally_native", MODE_PRIVATE)
+        if (sp.getBoolean("hibernation_prompt_shown", false)) return
+        try {
+            val future = PackageManagerCompat.getUnusedAppRestrictionsStatus(this)
+            future.addListener({
+                try {
+                    when (future.get()) {
+                        UnusedAppRestrictionsConstants.API_30_BACKPORT,
+                        UnusedAppRestrictionsConstants.API_30,
+                        UnusedAppRestrictionsConstants.API_31 -> {
+                            // 제한이 켜져 있음 → 해제 화면을 띄우고, 다시 안 뜨게 표시.
+                            sp.edit().putBoolean("hibernation_prompt_shown", true).apply()
+                            try {
+                                startActivity(
+                                    IntentCompat.createManageUnusedAppRestrictionsIntent(
+                                        this, packageName
+                                    )
+                                )
+                            } catch (e: Exception) {
+                                // 설정 화면을 못 열면 무시.
+                            }
+                        }
+                        else -> {
+                            // DISABLED / 미지원 — 아무것도 안 함.
+                        }
+                    }
+                } catch (e: Exception) {
+                    // 무시.
+                }
+            }, ContextCompat.getMainExecutor(this))
+        } catch (e: Exception) {
+            // 무시.
         }
     }
 
