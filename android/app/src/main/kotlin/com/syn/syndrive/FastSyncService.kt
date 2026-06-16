@@ -59,25 +59,34 @@ class FastSyncService : Service() {
         val prefs = Prefs(applicationContext)
         val auth = AuthManager(prefs)
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        while (true) {
-            if (auth.isSignedIn) {
-                val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "syndrive:sync")
-                try {
-                    wl.acquire(10 * 60 * 1000L)
-                    notify("동기화 중…")
-                    val summary = SyncEngine(applicationContext, prefs, auth).sync { }
-                    prefs.lastSyncInfo = "${now()} 자동 — $summary"
-                    notify("마지막: ${prefs.lastSyncInfo}")
-                    // 새로 받은 엑셀이 있으면 PharmTally 새 매출 알림을 띄운다.
-                    NewFileNotifier.notifyNewFiles(applicationContext, summary.newExcelFiles)
-                } catch (e: Exception) {
-                    prefs.lastSyncInfo = "${now()} 자동 — 오류: ${e.message}"
-                    notify("오류: ${e.message?.take(50)}")
-                } finally {
-                    if (wl.isHeld) wl.release()
+
+        // 주기 사이 delay 동안 CPU 가 깊은 절전(도즈)에 들면 코루틴 타이머가
+        // 밀려 2분 주기가 수십 분~1시간씩 늘어진다(배터리 최적화 제외만으론
+        // 못 막음 — delay 는 기기를 깨우지 않음). 서비스가 도는 내내 부분
+        // wakelock 을 잡아 CPU 를 깨어 있게 해 주기를 정확히 지킨다.
+        // (고속 모드의 트레이드오프 — 배터리를 더 쓰는 대신 거의 실시간.)
+        val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "syndrive:fastsync")
+        wl.setReferenceCounted(false)
+        wl.acquire()
+        try {
+            while (true) {
+                if (auth.isSignedIn) {
+                    try {
+                        notify("동기화 중…")
+                        val summary = SyncEngine(applicationContext, prefs, auth).sync { }
+                        prefs.lastSyncInfo = "${now()} 자동 — $summary"
+                        notify("마지막: ${prefs.lastSyncInfo}")
+                        // 새로 받은 엑셀이 있으면 PharmTally 새 매출 알림을 띄운다.
+                        NewFileNotifier.notifyNewFiles(applicationContext, summary.newExcelFiles)
+                    } catch (e: Exception) {
+                        prefs.lastSyncInfo = "${now()} 자동 — 오류: ${e.message}"
+                        notify("오류: ${e.message?.take(50)}")
+                    }
                 }
+                delay(prefs.intervalMinutes.coerceAtLeast(1) * 60_000L)
             }
-            delay(prefs.intervalMinutes.coerceAtLeast(1) * 60_000L)
+        } finally {
+            if (wl.isHeld) wl.release()
         }
     }
 
