@@ -41,7 +41,10 @@ android {
         // SynDrive 통합 코드가 NotificationChannel(API 26) 등을 가드 없이 쓰므로
         // minSdk 26(Android 8.0) 이상 필요. (SynDrive 도 원래 26, 단말은 Android 16.)
         minSdk = maxOf(flutter.minSdkVersion, 26)
-        targetSdk = flutter.targetSdkVersion
+        // targetSdk 36(Android 16)부터는 대화면(태블릿·폴더블) 기기에서 시스템이
+        // 앱의 화면 고정(screenOrientation) 요청을 강제로 무시한다. 세로 고정을
+        // 유지하기 위해 35 로 고정한다. (배포에 무방한 값.)
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
