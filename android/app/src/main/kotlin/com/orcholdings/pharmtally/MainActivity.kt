@@ -7,17 +7,29 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.core.content.PackageManagerCompat
 import androidx.core.content.UnusedAppRestrictionsConstants
+import com.syn.syndrive.AuthManager
 import com.syn.syndrive.NewFileNotifier
+import com.syn.syndrive.Prefs
+import com.syn.syndrive.SyncEngine
 import com.syn.syndrive.SyncScheduler
 import com.syn.syndrive.SyndriveActivity
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : FlutterActivity() {
 
     private val channelName = "pharmtally/native"
     private var channel: MethodChannel? = null
+
+    /** 메인 화면 새로고침 버튼이 부르는 즉시 동기화용 스코프. */
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** 알림 탭으로 콜드스타트된 경우, 그 날짜를 Flutter 가 가져갈 때까지 보관. */
     private var pendingTargetDate: String? = null
@@ -25,6 +37,11 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingTargetDate = intent?.getStringExtra(NewFileNotifier.EXTRA_TARGET_DATE)
+    }
+
+    override fun onDestroy() {
+        syncScope.cancel()
+        super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -48,6 +65,26 @@ class MainActivity : FlutterActivity() {
                     "getInitialTargetDate" -> {
                         result.success(pendingTargetDate)
                         pendingTargetDate = null
+                    }
+                    // 메인 화면 새로고침 버튼 → 즉시 1회 동기화.
+                    "syncNow" -> {
+                        syncScope.launch {
+                            val map: Map<String, Any> = try {
+                                val prefs = Prefs(applicationContext)
+                                val auth = AuthManager(prefs)
+                                if (!auth.isSignedIn) {
+                                    mapOf("ok" to false, "msg" to "Microsoft 로그인이 필요합니다 (폴더 버튼에서 설정)")
+                                } else {
+                                    val summary = SyncEngine(applicationContext, prefs, auth).sync { }
+                                    prefs.lastSyncInfo = "수동 — $summary"
+                                    NewFileNotifier.notifyNewFiles(applicationContext, summary.newExcelFiles)
+                                    mapOf("ok" to true, "msg" to summary.toString())
+                                }
+                            } catch (e: Exception) {
+                                mapOf("ok" to false, "msg" to (e.message ?: "동기화 오류"))
+                            }
+                            withContext(Dispatchers.Main) { result.success(map) }
+                        }
                     }
                     else -> result.notImplemented()
                 }

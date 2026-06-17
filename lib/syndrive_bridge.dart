@@ -38,6 +38,23 @@ class SyndriveBridge {
     }
   }
 
+  /// 메인 화면 새로고침 버튼 → 즉시 1회 동기화. 결과는 {ok, msg}.
+  /// 안드로이드가 아니거나 실패하면 {ok:false, msg:...} 를 돌려준다.
+  static Future<Map<String, dynamic>> syncNow() async {
+    try {
+      final r = await _channel.invokeMethod('syncNow');
+      if (r is Map) {
+        return {
+          'ok': r['ok'] == true,
+          'msg': r['msg']?.toString() ?? '',
+        };
+      }
+      return {'ok': false, 'msg': '알 수 없는 응답'};
+    } catch (e) {
+      return {'ok': false, 'msg': '$e'};
+    }
+  }
+
   /// SynDrive 가 이미 설정돼 있으면 고속 동기화 서비스를 재개.
   static Future<void> resumeFastSyncIfConfigured() async {
     try {

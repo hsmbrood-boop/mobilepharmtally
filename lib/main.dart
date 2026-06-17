@@ -661,6 +661,46 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// 새로고침(지금 동기화) 진행 중 표시. 버튼 중복 클릭 방지.
+  bool _syncing = false;
+
+  /// 폴더 버튼 왼쪽 새로고침 아이콘: SynDrive 설정 화면을 거치지 않고
+  /// 첫 화면에서 바로 1회 동기화한 뒤, 받은 내용으로 현재 날짜를 다시 로드.
+  Future<void> _syncNow() async {
+    if (_syncing) return;
+    if (kIsWeb || !Platform.isAndroid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('동기화는 안드로이드에서만 동작합니다.')),
+      );
+      return;
+    }
+    setState(() => _syncing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('동기화 중…'), duration: Duration(seconds: 60)),
+    );
+
+    final res = await SyndriveBridge.syncNow();
+
+    if (!mounted) return;
+    setState(() => _syncing = false);
+    messenger.hideCurrentSnackBar();
+
+    final ok = res['ok'] == true;
+    final msg = (res['msg'] ?? '').toString();
+    messenger.showSnackBar(
+      SnackBar(content: Text(ok ? '동기화 완료 — $msg' : '동기화 실패 — $msg')),
+    );
+
+    if (ok) {
+      // 받은 폴더 경로를 반영하고 현재 날짜를 다시 읽어 화면 갱신.
+      await SettlementStore.instance.reloadFolderPath();
+      if (!mounted) return;
+      await _loadForDate(selectedDate, showFeedback: false);
+    }
+  }
+
   /// 통계 버튼 옆 "불러오기" 아이콘: 폴더를 고르면 그 경로를 저장하고
   /// 곧바로 현재 날짜의 엑셀을 읽어 폼에 채운다. (기존 "데이터폴더설정" 대체)
   Future<void> _pickFolderAndLoad() async {
@@ -797,6 +837,11 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo)),
                   const Spacer(),
+                  IconButton(
+                    tooltip: '지금 동기화 (새로고침)',
+                    icon: const Icon(Icons.refresh, color: Colors.indigo),
+                    onPressed: _syncing ? null : _syncNow,
+                  ),
                   IconButton(
                     tooltip: '불러오기 (폴더 지정 후 자동 로드)',
                     icon: const Icon(Icons.folder, color: Color(0xFFFFA000)),
