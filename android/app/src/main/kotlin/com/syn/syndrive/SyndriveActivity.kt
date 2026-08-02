@@ -26,7 +26,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.switchmaterial.SwitchMaterial
 import com.orcholdings.pharmtally.R
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -53,7 +52,6 @@ class SyndriveActivity : AppCompatActivity() {
     private lateinit var etRemotePath: EditText
     private lateinit var etLocalPath: EditText
     private lateinit var spInterval: Spinner
-    private lateinit var swDelete: SwitchMaterial
     private lateinit var btnSyncNow: Button
     private lateinit var btnBattery: Button
     private lateinit var tvLastSync: TextView
@@ -94,7 +92,6 @@ class SyndriveActivity : AppCompatActivity() {
         etRemotePath = findViewById(R.id.etRemotePath)
         etLocalPath = findViewById(R.id.etLocalPath)
         spInterval = findViewById(R.id.spInterval)
-        swDelete = findViewById(R.id.swDelete)
         btnSyncNow = findViewById(R.id.btnSyncNow)
         btnBattery = findViewById(R.id.btnBattery)
         tvLastSync = findViewById(R.id.tvLastSync)
@@ -104,7 +101,6 @@ class SyndriveActivity : AppCompatActivity() {
         etRemotePath.setText(prefs.remotePath)
         // 저장된 폴더가 있으면 그 이름을, 없으면 기본값 OneSyncFiles 를 보여준다.
         etLocalPath.setText(prefs.localDirPath?.let { friendlyLocalName(it) } ?: "OneSyncFiles")
-        swDelete.isChecked = prefs.deleteRemoved
 
         spInterval.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item,
@@ -123,8 +119,6 @@ class SyndriveActivity : AppCompatActivity() {
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
-
-        swDelete.setOnCheckedChangeListener { _, checked -> prefs.deleteRemoved = checked }
 
         btnLogin.setOnClickListener { startLogin() }
         btnSyncNow.setOnClickListener { runSyncNow() }

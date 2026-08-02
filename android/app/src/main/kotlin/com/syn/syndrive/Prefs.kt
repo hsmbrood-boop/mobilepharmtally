@@ -54,11 +54,6 @@ class Prefs(context: Context) {
         get() = sp.getInt("interval_minutes", 5)
         set(v) = sp.edit().putInt("interval_minutes", v).apply()
 
-    /** 원드라이브에서 삭제된 파일을 폰에서도 삭제할지 */
-    var deleteRemoved: Boolean
-        get() = sp.getBoolean("delete_removed", true)
-        set(v) = sp.edit().putBoolean("delete_removed", v).apply()
-
     var lastSyncInfo: String
         get() = sp.getString("last_sync_info", "아직 동기화한 적 없음") ?: ""
         set(v) = sp.edit().putString("last_sync_info", v).apply()

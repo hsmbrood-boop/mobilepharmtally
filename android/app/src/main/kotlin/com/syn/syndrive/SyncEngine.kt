@@ -32,11 +32,10 @@ class SyncEngine(
     class Summary {
         var downloaded = 0
         var skipped = 0
-        var deleted = 0
         var failed = 0
         /** 이번 동기화로 새로 내려받은 .xlsx 파일 이름들 (PharmTally 새 매출 알림용) */
         val newExcelFiles = ArrayList<String>()
-        override fun toString() = "내려받음 ${downloaded}개, 건너뜀 $skipped, 삭제 $deleted, 실패 $failed"
+        override fun toString() = "내려받음 ${downloaded}개, 건너뜀 $skipped, 실패 $failed"
     }
 
     suspend fun sync(log: (String) -> Unit): Summary = withContext(Dispatchers.IO) {
@@ -80,7 +79,15 @@ class SyncEngine(
             fileMap.put(item.getString("id"), rel)
         }
 
-        // 3) 파일 병렬 다운로드 (동시 6개)
+        // 3) 삭제된 항목 — 폰은 백업 역할이므로 로컬 파일은 절대 지우지 않는다.
+        // 원드라이브에서 지워져도 폰 쪽 사본은 그대로 남긴다. id 매핑만 정리.
+        // (과거에 삭제 동기화가 켜져 있어서, "삭제 후 재생성"으로 저장된 파일을
+        // 같은 배치에서 받자마자 지워버리는 사고가 있었음 — 2026-07-02 파일.)
+        for (item in items) {
+            if (item.has("deleted")) fileMap.remove(item.getString("id"))
+        }
+
+        // 4) 파일 병렬 다운로드 (동시 6개)
         val fileItems = items.filter { !it.has("deleted") && it.has("file") }
         val semaphore = Semaphore(6)
         coroutineScope {
@@ -108,21 +115,6 @@ class SyncEngine(
                     }
                 }
             }.awaitAll()
-        }
-
-        // 4) 삭제 처리
-        for (item in items) {
-            if (!item.has("deleted")) continue
-            val id = item.getString("id")
-            val rel = fileMap.optString(id).ifEmpty { null }
-            if (rel != null && prefs.deleteRemoved) {
-                val f = File(localRoot, rel)
-                if (f.exists() && f.delete()) {
-                    summary.deleted++
-                    log("삭제: $rel")
-                }
-            }
-            fileMap.remove(id)
         }
 
         saveFileMap(fileMap)
@@ -212,7 +204,7 @@ class SyncEngine(
     private fun encodePath(path: String): String =
         path.split('/').joinToString("/") { Uri.encode(it) }
 
-    // ── 파일 id → 상대경로 매핑 (삭제 동기화용) ──────────────────────────────
+    // ── 파일 id → 상대경로 매핑 ────────────────────────────────────────────
 
     private val mapFile: File get() = File(context.filesDir, "filemap.json")
 

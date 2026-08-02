@@ -103,13 +103,6 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp" />
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/swDelete"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="원드라이브에서 지워지면 폰에서도 삭제" />
-
             <Button
                 android:id="@+id/btnBattery"
                 android:layout_width="match_parent"
