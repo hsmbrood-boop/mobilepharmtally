@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -171,6 +172,11 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
       _handlePendingTargetDate();
 
       await _loadForDate(selectedDate, showFeedback: false);
+
+      // 앱을 실행할 때마다 원드라이브에 새 내용이 있는지 확인하고 1회 동기화.
+      // 먼저 폰에 있는 자료로 화면을 채운 뒤 뒤에서 돌고, 끝나면 다시 로드한다.
+      unawaited(_syncNow(auto: true));
+
       await Future<void>.delayed(const Duration(milliseconds: 700));
       if (!mounted) return;
       final folder = SettlementStore.instance.savedFolderPath.trim();
@@ -215,6 +221,8 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
         await SettlementStore.instance.reloadFolderPath();
         if (!mounted) return;
         await _loadForDate(selectedDate, showFeedback: false);
+        // 백그라운드에 있던 앱을 다시 열 때도 원드라이브 확인 + 1회 동기화.
+        unawaited(_syncNow(auto: true));
       });
     }
   }
@@ -664,21 +672,40 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
   /// 새로고침(지금 동기화) 진행 중 표시. 버튼 중복 클릭 방지.
   bool _syncing = false;
 
+  /// 마지막 자동 동기화(앱 실행/복귀 시) 시작 시각.
+  DateTime? _lastAutoSync;
+
   /// 폴더 버튼 왼쪽 새로고침 아이콘: SynDrive 설정 화면을 거치지 않고
   /// 첫 화면에서 바로 1회 동기화한 뒤, 받은 내용으로 현재 날짜를 다시 로드.
-  Future<void> _syncNow() async {
-    if (_syncing) return;
+  ///
+  /// [auto] 가 true 면 앱 실행/복귀 시 자동으로 도는 1회 동기화다. 안드로이드가
+  /// 아니면 조용히 건너뛰고, 직전 자동 동기화 후 1분 안에는 다시 돌지 않는다
+  /// (권한 창·설정 화면에서 돌아올 때마다 반복되는 것을 막기 위함).
+  Future<void> _syncNow({bool auto = false}) async {
+    if (_syncing || !mounted) return;
     if (kIsWeb || !Platform.isAndroid) {
+      if (auto) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('동기화는 안드로이드에서만 동작합니다.')),
       );
       return;
     }
+    if (auto) {
+      final last = _lastAutoSync;
+      final now = DateTime.now();
+      if (last != null && now.difference(last) < const Duration(minutes: 1)) {
+        return;
+      }
+      _lastAutoSync = now;
+    }
     setState(() => _syncing = true);
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
-      const SnackBar(content: Text('동기화 중…'), duration: Duration(seconds: 60)),
+      SnackBar(
+        content: Text(auto ? '원드라이브 업데이트 확인 중…' : '동기화 중…'),
+        duration: const Duration(seconds: 60),
+      ),
     );
 
     final res = await SyndriveBridge.syncNow();
@@ -690,7 +717,10 @@ class _SalesScreenState extends State<SalesScreen> with WidgetsBindingObserver {
     final ok = res['ok'] == true;
     final msg = (res['msg'] ?? '').toString();
     messenger.showSnackBar(
-      SnackBar(content: Text(ok ? '동기화 완료 — $msg' : '동기화 실패 — $msg')),
+      SnackBar(
+        content: Text(ok ? '동기화 완료 — $msg' : '동기화 실패 — $msg'),
+        duration: Duration(seconds: auto ? 2 : 4),
+      ),
     );
 
     if (ok) {
