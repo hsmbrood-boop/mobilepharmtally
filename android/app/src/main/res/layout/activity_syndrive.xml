@@ -14,9 +14,11 @@
         android:layout_marginBottom="4dp" />
 
     <ScrollView
+        android:id="@+id/scrollLog"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -135,22 +137,20 @@
                 android:textSize="15sp"
                 android:textStyle="bold"
                 android:text="마지막 동기화: -" />
+
+            <!-- 로그. 예전에는 화면 아래에 160dp 고정 영역으로 따로 있어서, 작은
+                 화면(폰)에서는 위쪽 설정 영역이 잘려 주기 설정 등이 안 보였다.
+                 이제 같은 스크롤 안에 넣어 화면 전체가 한 번에 스크롤된다. -->
+            <TextView
+                android:id="@+id/tvLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:minHeight="80dp"
+                android:background="#11000000"
+                android:padding="8dp"
+                android:textSize="12sp"
+                android:fontFamily="monospace" />
         </LinearLayout>
-    </ScrollView>
-
-    <ScrollView
-        android:id="@+id/scrollLog"
-        android:layout_width="match_parent"
-        android:layout_height="160dp"
-        android:layout_marginTop="8dp"
-        android:background="#11000000">
-
-        <TextView
-            android:id="@+id/tvLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:textSize="12sp"
-            android:fontFamily="monospace" />
     </ScrollView>
 </LinearLayout>
