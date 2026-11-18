@@ -97,11 +97,19 @@
                 android:textStyle="bold"
                 android:textSize="16sp" />
 
-            <Spinner
-                android:id="@+id/spInterval"
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" />
+                android:layout_marginTop="4dp"
+                android:textSize="13sp"
+                android:text="아래 버튼을 눌러 동기화 주기를 바꿉니다. 목록에서 고르거나 분 단위로 직접 입력할 수 있습니다." />
+
+            <Button
+                android:id="@+id/btnInterval"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="동기화 주기" />
 
             <Button
                 android:id="@+id/btnBattery"

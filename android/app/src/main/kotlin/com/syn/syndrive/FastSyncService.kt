@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -83,7 +84,16 @@ class FastSyncService : Service() {
                         notify("오류: ${e.message?.take(50)}")
                     }
                 }
-                delay(prefs.intervalMinutes.coerceAtLeast(1) * 60_000L)
+                // 주기를 한 번에 통째로 기다리지 않고 짧게 끊어 기다리면서 설정을
+                // 다시 읽는다. 설정 화면에서 주기를 바꾸면(예: 10분 → 1분) 진행 중인
+                // 대기에도 몇 초 안에 새 주기가 반영된다.
+                val waitStart = SystemClock.elapsedRealtime()
+                while (true) {
+                    val target = prefs.intervalMinutes.coerceAtLeast(1) * 60_000L
+                    val remaining = target - (SystemClock.elapsedRealtime() - waitStart)
+                    if (remaining <= 0) break
+                    delay(minOf(remaining, 5_000L))
+                }
             }
         } finally {
             if (wl.isHeld) wl.release()

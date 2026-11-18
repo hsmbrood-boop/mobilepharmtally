@@ -11,13 +11,12 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.InputType
 import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ScrollView
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,15 +50,16 @@ class SyndriveActivity : AppCompatActivity() {
     private lateinit var tvAuthStatus: TextView
     private lateinit var etRemotePath: EditText
     private lateinit var etLocalPath: EditText
-    private lateinit var spInterval: Spinner
+    private lateinit var btnInterval: Button
     private lateinit var btnSyncNow: Button
     private lateinit var btnBattery: Button
     private lateinit var tvLastSync: TextView
     private lateinit var tvLog: TextView
     private lateinit var scrollLog: ScrollView
 
-    // 15분 미만은 WorkManager 제한 때문에 상시 실행 서비스(고속 모드)로 동작
-    private val intervalMinutes = intArrayOf(1, 2, 5, 10, 15, 30, 60, 180)
+    // 15분 미만은 WorkManager 제한 때문에 상시 실행 서비스(고속 모드)로 동작.
+    // 목록에 없는 값은 "직접 입력"으로 1~1440분 사이에서 자유롭게 정할 수 있다.
+    private val intervalPresets = intArrayOf(1, 2, 5, 10, 15, 30, 60, 180)
 
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -91,7 +91,7 @@ class SyndriveActivity : AppCompatActivity() {
         tvAuthStatus = findViewById(R.id.tvAuthStatus)
         etRemotePath = findViewById(R.id.etRemotePath)
         etLocalPath = findViewById(R.id.etLocalPath)
-        spInterval = findViewById(R.id.spInterval)
+        btnInterval = findViewById(R.id.btnInterval)
         btnSyncNow = findViewById(R.id.btnSyncNow)
         btnBattery = findViewById(R.id.btnBattery)
         tvLastSync = findViewById(R.id.tvLastSync)
@@ -102,23 +102,9 @@ class SyndriveActivity : AppCompatActivity() {
         // 저장된 폴더가 있으면 그 이름을, 없으면 기본값 OneSyncFiles 를 보여준다.
         etLocalPath.setText(prefs.localDirPath?.let { friendlyLocalName(it) } ?: "OneSyncFiles")
 
-        spInterval.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item,
-            arrayOf(
-                "1분마다 (고속 모드)", "2분마다 (고속 모드)", "5분마다 (고속 모드)", "10분마다 (고속 모드)",
-                "15분마다", "30분마다", "1시간마다", "3시간마다"
-            )
-        )
-        spInterval.setSelection(intervalMinutes.indexOf(prefs.intervalMinutes).coerceAtLeast(0))
-        spInterval.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (prefs.intervalMinutes != intervalMinutes[pos]) {
-                    prefs.intervalMinutes = intervalMinutes[pos]
-                    applySchedule()
-                }
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
-        }
+        // 주기 선택: 스피너 대신 버튼 + 선택 창. (폰에서 스피너 드롭다운으로는
+        // 주기를 바꿀 수 없던 문제를 피한다.)
+        btnInterval.setOnClickListener { showIntervalDialog() }
 
         btnLogin.setOnClickListener { startLogin() }
         btnSyncNow.setOnClickListener { runSyncNow() }
@@ -130,6 +116,70 @@ class SyndriveActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        updateUi()
+    }
+
+    private fun intervalLabel(minutes: Int): String {
+        val base = when {
+            minutes < 60 -> "${minutes}분마다"
+            minutes % 60 == 0 -> "${minutes / 60}시간마다"
+            else -> "${minutes / 60}시간 ${minutes % 60}분마다"
+        }
+        return if (minutes < 15) "$base (고속 모드)" else base
+    }
+
+    /** 동기화 주기 선택 창: 자주 쓰는 값 목록 + 직접 입력. */
+    private fun showIntervalDialog() {
+        val labels = intervalPresets.map { intervalLabel(it) } + "직접 입력…"
+        val checked = intervalPresets.indexOf(prefs.intervalMinutes)
+            .let { if (it >= 0) it else labels.size - 1 }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("동기화 주기")
+            .setSingleChoiceItems(labels.toTypedArray(), checked) { dialog, which ->
+                dialog.dismiss()
+                if (which < intervalPresets.size) setInterval(intervalPresets[which])
+                else showCustomIntervalDialog()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    /** 분 단위 직접 입력 (1~1440분). */
+    private fun showCustomIntervalDialog() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = "분 (1~1440)"
+            setText(prefs.intervalMinutes.toString())
+            setSelection(text.length)
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("동기화 주기 직접 입력")
+            .setMessage("몇 분마다 동기화할지 입력하세요. 15분 미만은 고속 모드(상시 알림)로 동작합니다.")
+            .setView(box)
+            .setPositiveButton("확인") { _, _ ->
+                val m = input.text.toString().trim().toIntOrNull()
+                if (m == null || m < 1 || m > 1440) {
+                    Toast.makeText(this, "1~1440 사이의 숫자를 입력하세요", Toast.LENGTH_SHORT).show()
+                } else {
+                    setInterval(m)
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun setInterval(minutes: Int) {
+        if (prefs.intervalMinutes != minutes) {
+            prefs.intervalMinutes = minutes
+            applySchedule()
+            appendLog("동기화 주기 변경: ${intervalLabel(minutes)}")
+            if (!auth.isSignedIn) appendLog("(로그인 후부터 자동 동기화가 시작됩니다)")
+        }
         updateUi()
     }
 
@@ -285,6 +335,7 @@ class SyndriveActivity : AppCompatActivity() {
     private fun updateUi() {
         tvAuthStatus.text = if (auth.isSignedIn) "로그인됨 ✓" else "로그인 필요"
         tvLastSync.text = "마지막 동기화: ${prefs.lastSyncInfo}"
+        btnInterval.text = "동기화 주기: ${intervalLabel(prefs.intervalMinutes)}  ▾"
     }
 
     private fun appendLog(msg: String) {
